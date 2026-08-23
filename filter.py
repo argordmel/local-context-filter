@@ -225,6 +225,18 @@ def confine_to_root(path):
     return real
 
 
+def _is_symlink_escaping_root(path):
+    """True if path is a symlink whose target resolves outside the global
+    ROOT — used to skip symlinks found *inside* an already-confined tree
+    during a recursive walk (confine_to_root only checks the top-level
+    --input path itself, not every entry os.walk turns up underneath it).
+    """
+    if not os.path.islink(path):
+        return False
+    real = os.path.realpath(path)
+    return real != ROOT and not real.startswith(ROOT + os.sep)
+
+
 def read_input(path):
     if path:
         real = confine_to_root(path)
@@ -269,9 +281,11 @@ def _iter_scan_targets(root, excluded):
         yield root, os.path.basename(root)
         return
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in excluded]
+        dirnames[:] = [d for d in dirnames if d not in excluded and not _is_symlink_escaping_root(os.path.join(dirpath, d))]
         for name in sorted(filenames):
             full = os.path.join(dirpath, name)
+            if _is_symlink_escaping_root(full):
+                continue
             yield full, os.path.relpath(full, root)
 
 
@@ -328,7 +342,10 @@ def find_search(root, pattern, ignore_case=False, excluded_dirs=None):
     matches = []
     truncated = False
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in excluded)
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in excluded and not _is_symlink_escaping_root(os.path.join(dirpath, d))
+        )
+        filenames = [f for f in filenames if not _is_symlink_escaping_root(os.path.join(dirpath, f))]
         candidates = [(d, True) for d in dirnames] + [(f, False) for f in filenames]
         for name, is_dir in sorted(candidates):
             check_name = name.lower() if ignore_case else name
@@ -459,9 +476,13 @@ def count_lines(root, excluded_dirs=None):
     lines = []
     total = 0
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in excluded)
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in excluded and not _is_symlink_escaping_root(os.path.join(dirpath, d))
+        )
         for name in sorted(filenames):
             full = os.path.join(dirpath, name)
+            if _is_symlink_escaping_root(full):
+                continue
             n = line_count(full)
             if n is None:
                 continue
@@ -485,21 +506,29 @@ def list_tree(root, excluded_dirs=None):
         sys.exit(f"error: '{root}' is not a directory")
     entries = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in excluded)
+        dirnames[:] = sorted(
+            d for d in dirnames if d not in excluded and not _is_symlink_escaping_root(os.path.join(dirpath, d))
+        )
         rel_dir = os.path.relpath(dirpath, root)
         if rel_dir != ".":
             entries.append(rel_dir + "/")
         for name in sorted(filenames):
-            entries.append(os.path.relpath(os.path.join(dirpath, name), root))
+            full = os.path.join(dirpath, name)
+            if _is_symlink_escaping_root(full):
+                continue
+            entries.append(os.path.relpath(full, root))
     return sorted(entries)
 
 
 def read_directory(root):
     """Recursively read all files under root (subdirs included), each tagged by relative path."""
     chunks = []
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not _is_symlink_escaping_root(os.path.join(dirpath, d))]
         for name in sorted(filenames):
             full = os.path.join(dirpath, name)
+            if _is_symlink_escaping_root(full):
+                continue
             rel = os.path.relpath(full, root)
             try:
                 with open(full, "r", encoding="utf-8") as f:

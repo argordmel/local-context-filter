@@ -251,7 +251,11 @@ more directories in one project without editing the skill, add
 - Path confinement: `--input` (and `--grep`'s search root) can go into
   subdirectories freely but can never resolve above the directory you ran
   the command from — `../`, absolute paths outside it, and symlinks
-  pointing out are all rejected.
+  pointing out are all rejected. This also covers symlinks found *inside*
+  an already-confined tree during a recursive walk (`--grep`, `--ls`,
+  `--find`, `--count`, and `--task` on a directory) — each one found is
+  checked individually, so a symlink nested a few levels deep that points
+  outside can't leak content either.
 - `--grep`, `--ls`, `--find`, and `--count` auto-skip `.git`, `node_modules`,
   `dist`, `build`, `.venv`, `__pycache__`, `.next`, `coverage` (plus any
   project excludes above); `--grep` and `--find` also cap at 500 matches.
@@ -314,6 +318,8 @@ needs to be running to pass.
 | Usage log rotates past 6000 lines, keeps most recent 5000, untouched below trigger | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (all cases) |
 | Oversized `--task` input chunked (not truncated), results joined | `TestCallLLMChunked` (all cases) |
 | Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
+| Nested symlink escaping root not read/listed (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
+| Nested symlink pointing *inside* root still works | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |
 | `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Ollama backend: list models, generate call | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |

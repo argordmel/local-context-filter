@@ -127,6 +127,23 @@ class TestGrepSearch(TempRepoTestCase):
         full = self.write("a.js", "nothing here\n")
         self.assertEqual(flt.grep_search(full, "ServiceOrder"), [])
 
+    def test_nested_symlink_escaping_root_is_not_read(self):
+        outside = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("SECRET_OUTSIDE_ROOT\n")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(self.tmpdir, "innocent.txt"))
+            matches = flt.grep_search(flt.ROOT, "SECRET")
+            self.assertEqual(matches, [])
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
+
+    def test_nested_symlink_inside_root_is_still_read(self):
+        self.write("real/target.txt", "INTERNAL_CONTENT\n")
+        os.symlink(os.path.join(self.tmpdir, "real", "target.txt"), os.path.join(self.tmpdir, "link_inside.txt"))
+        matches = flt.grep_search(flt.ROOT, "INTERNAL_CONTENT")
+        self.assertEqual(len(matches), 2)
+
 
 class TestFindSearch(TempRepoTestCase):
     def test_finds_files_by_glob(self):
@@ -173,6 +190,16 @@ class TestFindSearch(TempRepoTestCase):
         full = self.write("sub/README.md", "x")
         self.assertEqual(flt.find_search(full, "readme*"), [])
         self.assertEqual(flt.find_search(full, "readme*", ignore_case=True), ["README.md"])
+
+    def test_nested_symlink_escaping_root_is_not_listed(self):
+        outside = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("x")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(self.tmpdir, "innocent.txt"))
+            self.assertEqual(flt.find_search(flt.ROOT, "*.txt"), [])
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
 
 class TestProjectExcludes(TempRepoTestCase):
@@ -309,6 +336,16 @@ class TestListTree(TempRepoTestCase):
         self.write("a.txt", "hi")
         with self.assertRaises(SystemExit):
             flt.list_tree(os.path.join(self.tmpdir, "a.txt"))
+
+    def test_nested_symlink_escaping_root_is_not_listed(self):
+        outside = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("x")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(self.tmpdir, "innocent.txt"))
+            self.assertEqual(flt.list_tree(flt.ROOT), [])
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
 
 class TestGitDiff(TempRepoTestCase):
@@ -899,6 +936,17 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--count", "--input", "empty.txt")
         self.assertEqual(result.stdout.strip(), "0 empty.txt")
 
+    def test_count_nested_symlink_escaping_root_is_not_read(self):
+        outside = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("x\n")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(self.tmpdir, "innocent.txt"))
+            result = self.run_cli("--count")
+            self.assertEqual(result.stdout.strip(), "NO_ENTRIES")
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
+
     def test_run_rejects_non_allowed_binary(self):
         result = self.run_cli("--run", "rm -rf /")
         self.assertNotEqual(result.returncode, 0)
@@ -937,6 +985,18 @@ class TestReadDirectory(TempRepoTestCase):
         os.makedirs(os.path.join(self.tmpdir, "empty"))
         with self.assertRaises(SystemExit):
             flt.read_directory(os.path.join(self.tmpdir, "empty"))
+
+    def test_nested_symlink_escaping_root_is_not_read(self):
+        outside = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("SECRET_OUTSIDE_ROOT")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(self.tmpdir, "innocent.txt"))
+            self.write("a.txt", "hello")  # so the dir isn't empty
+            content = flt.read_directory(flt.ROOT)
+            self.assertNotIn("SECRET_OUTSIDE_ROOT", content)
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
 
 if __name__ == "__main__":

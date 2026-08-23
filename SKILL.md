@@ -113,7 +113,9 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 **recursively into subdirectories**, but the script is confined to the
 current working directory: it will never read anything above the folder
 you ran it from (`../`, absolute paths outside cwd, symlinks pointing out
-are all rejected). Run it from the folder you want as the search root.
+are all rejected — including a symlink found *inside* the tree partway
+through a recursive walk, not just `--input` itself). Run it from the
+folder you want as the search root.
 
 Or pipe stdin:
 

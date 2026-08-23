@@ -259,7 +259,11 @@ saltar más directorios en un proyecto sin tocar la skill, agregá
   puede entrar libremente a subdirectorios pero nunca puede resolver por
   encima del directorio desde donde corriste el comando — `../`, rutas
   absolutas fuera de él, y symlinks que apunten afuera son todos
-  rechazados.
+  rechazados. Esto también cubre symlinks encontrados *dentro* de un árbol
+  ya confinado durante un recorrido recursivo (`--grep`, `--ls`, `--find`,
+  `--count`, y `--task` sobre un directorio) — cada uno se chequea
+  individualmente, así que un symlink anidado varios niveles adentro que
+  apunte afuera tampoco puede filtrar contenido.
 - `--grep`, `--ls`, `--find`, y `--count` saltan automáticamente `.git`,
   `node_modules`, `dist`, `build`, `.venv`, `__pycache__`, `.next`,
   `coverage` (más los excludes de proyecto de arriba); `--grep` y
@@ -324,6 +328,8 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Log de uso rota pasadas 6000 líneas, conserva las 5000 más recientes, intacto bajo el gatillo | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (todos los casos) |
 | Entrada sobredimensionada de `--task` en chunks (no truncada), resultados unidos | `TestCallLLMChunked` (todos los casos) |
 | Confinamiento de rutas (`../`, absolutas, symlink hacia afuera) | `TestConfineToRoot` (todos los casos, incl. `test_symlink_pointing_outside_root_rejected`) |
+| Symlink anidado que escapa la raíz no se lee/lista (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
+| Symlink anidado que apunta *adentro* de la raíz sigue funcionando | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` leyendo archivo / directorio / stdin | `TestReadInput`, `TestReadDirectory` |
 | `--task` sin `--input` y sin stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Backend Ollama: listar modelos, llamada generate | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |

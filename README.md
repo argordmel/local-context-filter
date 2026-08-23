@@ -275,8 +275,15 @@ more directories in one project without editing the skill, add
   project excludes above); `--grep` and `--find` also cap at 500 matches.
 - `--run` only executes `npm`/`npx`/`pnpm`/`yarn` — any other binary is
   rejected before it runs, and the command is tokenized (never passed to a
-  shell), so no shell injection via `--run`. It's still real code
-  execution (postinstall scripts, etc.), same as running it yourself.
+  shell), so no shell injection via `--run`. That allowlist and the
+  directory confinement don't stop what npm/yarn/pnpm themselves do once
+  invoked, though: `install`/postinstall scripts run arbitrary code from
+  the package (same as running that install by hand), and the subprocess
+  inherits the full parent environment, including any secrets in it. Only
+  point `--run` at a `package.json` you trust, same as you'd trust it to
+  run `npm install` yourself directly. Raw `--run` output (no `--task`)
+  over ~24k chars is truncated with a stderr warning, same as the
+  LLM-filter path's budget below.
 - The LLM-filter mode splits input over ~24k chars into sequential chunks
   and filters each separately (a stderr warning names the chunk count) —
   nothing is dropped, it just takes one LLM call per chunk instead of one
@@ -329,6 +336,7 @@ needs to be running to pass.
 | `--run`/`--diff` binary found but not executable → clean error, not a traceback | `TestRunPackageCommand.test_non_executable_binary_on_path_errors_cleanly` |
 | `--run` executes allowed binary, prints output | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutually exclusive with `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
+| `--run` raw output truncated past cap without `--task`, stderr warning | `TestCLIEndToEnd.test_run_output_truncated_past_cap_without_task` |
 | `--run --input` a single file errors cleanly, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |

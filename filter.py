@@ -90,6 +90,7 @@ EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__"
 MAX_GREP_MATCHES = 500
 ALLOWED_RUN_BINS = {"npm", "npx", "pnpm", "yarn"}
 RUN_TIMEOUT = 600
+RUN_MAX_OUTPUT_CHARS = 24000  # same budget as MAX_CONTENT_CHARS below; caps a noisy install's raw output
 USAGE_LOG_TRIM_TRIGGER = 6000  # rotate once the log exceeds this many lines...
 USAGE_LOG_KEEP_LINES = 5000    # ...keeping only the most recent this many
 LOG_PATH = os.environ.get(
@@ -879,8 +880,16 @@ def main():
             log_usage("run", None, 0, 0)
             return
         if not args.task:
-            print(output, end="" if output.endswith("\n") else "\n")
-            log_usage("run", None, len(output), len(output))
+            printed = output
+            if len(printed) > RUN_MAX_OUTPUT_CHARS:
+                printed = printed[:RUN_MAX_OUTPUT_CHARS]
+                print(
+                    f"warning: --run output is {len(output)} chars, truncated to {RUN_MAX_OUTPUT_CHARS}; "
+                    f"add --task to have the local model filter it down instead",
+                    file=sys.stderr,
+                )
+            print(printed, end="" if printed.endswith("\n") else "\n")
+            log_usage("run", None, len(output), len(printed))
             return
         model = resolve_model(args.backend, host, args.model)
         result = call_llm_chunked(args.backend, host, model, args.task, output, args.max_words)

@@ -284,9 +284,16 @@ saltar más directorios en un proyecto sin tocar la skill, agregá
   `--find` además tienen un tope de 500 coincidencias.
 - `--run` solo ejecuta `npm`/`npx`/`pnpm`/`yarn` — cualquier otro binario
   se rechaza antes de correr, y el comando se tokeniza (nunca pasa por una
-  shell), o sea sin inyección de shell vía `--run`. Sigue siendo ejecución
-  real de código (scripts postinstall, etc.), igual que correrlo vos
-  mismo.
+  shell), o sea sin inyección de shell vía `--run`. Esa lista permitida y
+  el confinamiento de directorio no evitan lo que npm/yarn/pnpm hacen una
+  vez invocados: los scripts `install`/postinstall corren código
+  arbitrario del paquete (igual que correr ese install a mano), y el
+  subproceso hereda todo el entorno del padre, incluyendo cualquier
+  secreto que haya ahí. Solo apuntá `--run` a un `package.json` en el que
+  confíes, igual que confiarías en correr `npm install` vos mismo
+  directo. La salida cruda de `--run` (sin `--task`) que supere ~24k
+  caracteres se trunca con warning en stderr, mismo presupuesto que el
+  modo filtro LLM de abajo.
 - El modo filtro LLM divide entradas de más de ~24k caracteres en chunks
   secuenciales y filtra cada uno por separado (warning en stderr con la
   cantidad de chunks) — nada se pierde, solo toma una llamada al modelo
@@ -339,6 +346,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--run`/`--diff` binario encontrado pero no ejecutable → error limpio, no traceback | `TestRunPackageCommand.test_non_executable_binary_on_path_errors_cleanly` |
 | `--run` ejecuta binario permitido, imprime salida | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutuamente excluyente con `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
+| `--run` salida cruda truncada pasado el tope sin `--task`, warning en stderr | `TestCLIEndToEnd.test_run_output_truncated_past_cap_without_task` |
 | `--run --input` archivo único falla limpio, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totales por modo, sentinel `NO_USAGE_DATA` | `TestGenerateReport` (todos los casos), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutuamente excluyentes con otros modos | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |

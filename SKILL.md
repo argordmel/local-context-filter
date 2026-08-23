@@ -248,9 +248,20 @@ allowed, anything else is rejected before it executes — at `--input`
 (default: cwd, must be a directory). Same confinement rules as elsewhere. Prints combined
 stdout+stderr as-is, no LLM involved, same zero-context-cost principle as
 `--diff`. Add `--task` to have the local model filter a noisy install log
-down to the actual errors/warnings that matter. Prints `NO_OUTPUT` if the
-command produced nothing. 10-minute timeout. Mutually exclusive with
-`--grep`/`--diff`/`--ls`/`--find`/`--count`.
+down to the actual errors/warnings that matter. Raw output (no `--task`)
+over ~24k chars is truncated with a stderr warning, same budget as the
+LLM-filter path — add `--task` instead of relying on the raw dump for a
+very noisy install. Prints `NO_OUTPUT` if the command produced nothing.
+10-minute timeout. Mutually exclusive with `--grep`/`--diff`/`--ls`/`--find`/`--count`.
+
+**Security note:** the allowlist and directory confinement stop `--run`
+from being a general command runner, but they don't stop what `npm`/
+`yarn`/`pnpm` themselves can do once invoked — `install`/postinstall
+scripts run arbitrary code from the package (same as running that
+install by hand), and the subprocess inherits the full parent
+environment, including any secrets in it (API keys, tokens). Only use
+`--run` against `package.json`s you trust, same as you would running
+`npm install` yourself directly.
 
 ### Project-level excludes (`.claude/local-context-filter.json`)
 

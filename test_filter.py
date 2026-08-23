@@ -1208,6 +1208,23 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--run", "npm --version", "--input", "package.json")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("is not a directory", result.stdout + result.stderr)
+
+    def test_run_output_truncated_past_cap_without_task(self):
+        fake_bin_dir = os.path.join(self.tmpdir, "fakebin")
+        os.makedirs(fake_bin_dir)
+        fake_npm = os.path.join(fake_bin_dir, "npm")
+        with open(fake_npm, "w") as f:
+            f.write("#!/bin/sh\nhead -c 30000 /dev/zero | tr '\\0' 'x'\n")
+        os.chmod(fake_npm, 0o755)
+        env = {**os.environ, "PATH": f"{fake_bin_dir}:{os.environ.get('PATH', '')}",
+               "LOCAL_CONTEXT_FILTER_LOG": os.path.join(self.tmpdir, "usage.json")}
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--run", "npm install"],
+            cwd=self.tmpdir, capture_output=True, text=True, env=env,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "x" * flt.RUN_MAX_OUTPUT_CHARS + "\n")
+        self.assertIn("truncated", result.stderr)
         self.assertNotIn("Traceback", result.stdout + result.stderr)
 
     def test_run_and_grep_mutually_exclusive(self):

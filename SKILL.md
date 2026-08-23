@@ -132,7 +132,8 @@ python3 ~/.claude/skills/local-context-filter/filter.py --grep "ServiceOrder"
 
 Real recursive regex search (like `grep -rn`), rooted at `--input` (default:
 cwd — the whole current project, subdirs included), same confinement rules
-as above. Auto-skips `.git`, `node_modules`, `dist`, `build`, `.venv`,
+as above. `--input` can also point to a single file, in which case only
+that file is searched. Auto-skips `.git`, `node_modules`, `dist`, `build`, `.venv`,
 `__pycache__`, `.next`, `coverage`. Caps at 500 matches (warns on stderr and
 tells you to narrow the pattern or `--input` path if hit). Prints exact
 `path:line: content` — never touches Ollama, so this is the cheapest and

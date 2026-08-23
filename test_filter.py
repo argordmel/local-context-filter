@@ -118,6 +118,15 @@ class TestGrepSearch(TempRepoTestCase):
         flt.grep_search(flt.ROOT, "ServiceOrder", stats=stats)
         self.assertEqual(stats["chars_scanned"], len("const ServiceOrder = 1;\n") + len("const other = 2;\n"))
 
+    def test_single_file_input_is_searched(self):
+        full = self.write("sub/a.js", "const ServiceOrder = 1;\nconst other = 2;\n")
+        matches = flt.grep_search(full, "ServiceOrder")
+        self.assertEqual(matches, ["a.js:1: const ServiceOrder = 1;"])
+
+    def test_single_file_input_no_matches(self):
+        full = self.write("a.js", "nothing here\n")
+        self.assertEqual(flt.grep_search(full, "ServiceOrder"), [])
+
 
 class TestFindSearch(TempRepoTestCase):
     def test_finds_files_by_glob(self):
@@ -716,6 +725,14 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--grep", "ServiceOrder")
         self.assertEqual(result.returncode, 0)
         self.assertIn("a.js:1:", result.stdout)
+
+    def test_grep_input_single_file_is_searched(self):
+        self.write("sub/a.js", "const ServiceOrder = 1;\n")
+        self.write("sub/b.js", "const ServiceOrder = 2;\n")
+        result = self.run_cli("--grep", "ServiceOrder", "--input", "sub/a.js")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("a.js:1:", result.stdout)
+        self.assertNotIn("b.js", result.stdout)
 
     def test_grep_no_matches_prints_sentinel(self):
         self.write("a.js", "nothing here\n")

@@ -294,6 +294,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--grep` salta `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
 | `--grep` tope de 500 coincidencias + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
 | `--grep` salta archivos binarios/no legibles | `TestGrepSearch.test_binary_file_skipped_without_crash` |
+| `--grep --input` acotado a un archivo único | `TestGrepSearch.test_single_file_input_is_searched`, `test_single_file_input_no_matches`, `TestCLIEndToEnd.test_grep_input_single_file_is_searched` |
 | `--diff` repo completo, crudo | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
 | `--diff --input` acotado a una ruta | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
 | `--diff` árbol limpio → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |

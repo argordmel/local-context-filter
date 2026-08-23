@@ -17,10 +17,10 @@ Paths are confined to the current working directory: parent traversal (../,
 paths outside cwd) is rejected.
 
 --grep does a real recursive regex search (like `grep -rn`) under --input
-(default: cwd) and prints exact "path:line: content" matches — no LLM
-involved, cheapest and most precise option for exact-pattern search. Add
---task on top of --grep to additionally have the local model narrow a large
-match list down to what's relevant to that task.
+(default: cwd; can also be a single file) and prints exact "path:line:
+content" matches — no LLM involved, cheapest and most precise option for
+exact-pattern search. Add --task on top of --grep to additionally have the
+local model narrow a large match list down to what's relevant to that task.
 
 --diff runs `git diff HEAD` (staged + unstaged) at cwd, or scoped to
 --input (a single file or directory) if given, and prints it as-is — no
@@ -259,8 +259,26 @@ def load_project_excludes(root):
     return {str(x) for x in exclude}
 
 
+def _iter_scan_targets(root, excluded):
+    """Yield (full_path, display_path) pairs to scan: just root itself
+    (basename as display_path) if root is a single file, otherwise every
+    file found recursively under root (skipping excluded dirs), display_path
+    relative to root.
+    """
+    if os.path.isfile(root):
+        yield root, os.path.basename(root)
+        return
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in excluded]
+        for name in sorted(filenames):
+            full = os.path.join(dirpath, name)
+            yield full, os.path.relpath(full, root)
+
+
 def grep_search(root, pattern, ignore_case=False, stats=None, excluded_dirs=None):
-    """Recursively grep for `pattern` (regex) under root, skipping excluded_dirs (default: EXCLUDED_DIRS) and binary files.
+    """Grep for `pattern` (regex) in root — a single file, or recursively
+    under root if it's a directory, skipping excluded_dirs (default:
+    EXCLUDED_DIRS) and binary files.
 
     If `stats` (a dict) is passed, sets stats['chars_scanned'] to the total
     characters read across all scanned lines, matched or not — used only for
@@ -272,24 +290,18 @@ def grep_search(root, pattern, ignore_case=False, stats=None, excluded_dirs=None
     matches = []
     truncated = False
     chars_scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in excluded]
-        for name in sorted(filenames):
-            full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, root)
-            try:
-                with open(full, "r", encoding="utf-8") as f:
-                    for lineno, line in enumerate(f, start=1):
-                        chars_scanned += len(line)
-                        if rx.search(line):
-                            matches.append(f"{rel}:{lineno}: {line.rstrip()}")
-                            if len(matches) >= MAX_GREP_MATCHES:
-                                truncated = True
-                                break
-            except (UnicodeDecodeError, OSError):
-                continue
-            if truncated:
-                break
+    for full, rel in _iter_scan_targets(root, excluded):
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                for lineno, line in enumerate(f, start=1):
+                    chars_scanned += len(line)
+                    if rx.search(line):
+                        matches.append(f"{rel}:{lineno}: {line.rstrip()}")
+                        if len(matches) >= MAX_GREP_MATCHES:
+                            truncated = True
+                            break
+        except (UnicodeDecodeError, OSError):
+            continue
         if truncated:
             break
     if truncated:

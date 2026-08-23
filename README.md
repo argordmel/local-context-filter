@@ -284,6 +284,7 @@ needs to be running to pass.
 | `--grep` skips `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
 | `--grep` 500-match cap + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
 | `--grep` skips unreadable/binary files | `TestGrepSearch.test_binary_file_skipped_without_crash` |
+| `--grep --input` scoped to a single file | `TestGrepSearch.test_single_file_input_is_searched`, `test_single_file_input_no_matches`, `TestCLIEndToEnd.test_grep_input_single_file_is_searched` |
 | `--diff` whole repo, raw | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
 | `--diff --input` scoped to one path | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
 | `--diff` clean tree → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |

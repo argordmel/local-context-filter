@@ -15,8 +15,9 @@ offloads big/raw context to a **local** LLM before anything reaches Claude:
 - **`--diff`** — filters `git diff HEAD` at cwd; raw diff (free) without
   `--task`, or model-filtered with it.
 
-Backed by [Ollama](https://ollama.com) (default) or [LM Studio](https://lmstudio.ai)
-(OpenAI-compatible local server), selectable via `--backend`. See [TODO](#todo).
+Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
+or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
+`--backend openai --host <url>`. Selectable via `--backend`. See [TODO](#todo).
 
 ## Why
 
@@ -50,6 +51,9 @@ ln -s ~/code/local-context-filter ~/.claude/skills/local-context-filter
     e.g. `ollama pull qwen2.5:7b`.
   - **LM Studio**: local server started (Developer tab > Start Server,
     default port 1234) with a model loaded; pass `--backend lmstudio`.
+  - **Any other OpenAI-compatible server** (llama.cpp server, vLLM, ...):
+    `--backend openai --host http://host:port` — `--host` is required,
+    there's no conventional default port to assume.
 
 Only one backend needs to run at a time — pick one with `--backend`.
 
@@ -69,6 +73,11 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 # same, via LM Studio
 python3 ~/.claude/skills/local-context-filter/filter.py \
   --backend lmstudio \
+  --task "find the root cause of the timeout" --input server.log --max-words 200
+
+# same, via any other OpenAI-compatible server
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --backend openai --host http://localhost:8080 \
   --task "find the root cause of the timeout" --input server.log --max-words 200
 
 # grep first, then let the local model narrow a noisy match list
@@ -125,16 +134,17 @@ preference explicit and consistent instead of judgment-call-by-judgment-call.
 python3 ~/.claude/skills/local-context-filter/test_filter.py -v
 ```
 
-`unittest`, stdlib only. Mocks all network calls (Ollama/LM Studio) and uses
-real temp git repos for `--diff` — no server needs to be running to pass.
+`unittest`, stdlib only. Mocks all network calls (Ollama/LM Studio/generic
+OpenAI-compatible) and uses real temp git repos for `--diff` — no server
+needs to be running to pass.
 
 ## TODO
 
 - [x] Support [LM Studio](https://lmstudio.ai) (OpenAI-compatible local
       server) as an alternative backend to Ollama.
-- [ ] Support other local runtimes generically (llama.cpp server, vLLM, any
-      OpenAI-compatible `/v1/chat/completions` endpoint) via `--backend` +
-      `--host` instead of a fixed `ollama`/`lmstudio` choice.
+- [x] Support other local runtimes generically (llama.cpp server, vLLM, any
+      OpenAI-compatible `/v1/chat/completions` endpoint) via `--backend openai`
+      + `--host`.
 
 ## License
 

@@ -2,7 +2,7 @@
 """Filter/summarize raw content via a local LLM, keeping only what's relevant to a task.
 
 Usage:
-  python3 filter.py --task "TASK" --input FILE_OR_DIR [--backend ollama|lmstudio] [--model TAG] [--max-words N]
+  python3 filter.py --task "TASK" --input FILE_OR_DIR [--backend ollama|lmstudio|openai] [--host URL] [--model TAG] [--max-words N]
   cat file | python3 filter.py --task "TASK"
   python3 filter.py --grep PATTERN [--input DIR] [--task "TASK"]
   python3 filter.py --diff [--task "TASK"]
@@ -21,9 +21,11 @@ match list down to what's relevant to that task.
 no LLM involved. Add --task to have the local model filter it down to what's
 relevant to that task instead. Cannot combine with --grep or --input.
 
---backend selects the local server: "ollama" (default, http://localhost:11434)
-or "lmstudio" (OpenAI-compatible, http://localhost:1234). Override the host
-with --host.
+--backend selects the local server: "ollama" (default, http://localhost:11434),
+"lmstudio" (OpenAI-compatible, http://localhost:1234), or "openai" (any other
+OpenAI-compatible server — llama.cpp server, vLLM, etc.) which requires
+--host since there's no conventional default port. Override ollama/lmstudio's
+default host with --host too.
 
 Prints the filtered content to stdout. Nothing else goes to stdout.
 """
@@ -64,7 +66,12 @@ def list_models(backend, host):
         with urllib.request.urlopen(url, timeout=3) as resp:
             data = json.loads(resp.read())
     except urllib.error.URLError:
-        start_hint = "`ollama serve`" if backend == "ollama" else "LM Studio's local server (Developer tab > Start Server)"
+        if backend == "ollama":
+            start_hint = "`ollama serve`"
+        elif backend == "lmstudio":
+            start_hint = "LM Studio's local server (Developer tab > Start Server)"
+        else:
+            start_hint = "the server"
         sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint}.")
     if backend == "ollama":
         return {m.get("name") for m in data.get("models", [])}
@@ -76,7 +83,12 @@ def resolve_model(backend, host, model):
     names = list_models(backend, host)
     if model:
         if model not in names:
-            fix = f"`ollama pull {model}`" if backend == "ollama" else "load it in LM Studio first"
+            if backend == "ollama":
+                fix = f"`ollama pull {model}`"
+            elif backend == "lmstudio":
+                fix = "load it in LM Studio first"
+            else:
+                fix = "load it on the server first"
             sys.exit(f"error: model '{model}' not available on {backend}. {fix} (available: {', '.join(sorted(names)) or 'none'}).")
         return model
     if backend in DEFAULT_MODELS and DEFAULT_MODELS[backend] in names:
@@ -197,7 +209,7 @@ def call_llm(backend, host, model, task, content, max_words):
             "stream": False,
             "options": {"num_ctx": NUM_CTX, "temperature": 0.2},
         }
-    else:  # lmstudio: OpenAI-compatible chat completions
+    else:  # lmstudio / openai: OpenAI-compatible chat completions
         url = f"{host}/v1/chat/completions"
         payload = {
             "model": model,
@@ -242,11 +254,13 @@ def main():
     ap.add_argument("--grep", metavar="PATTERN", help="exact regex search (like grep -rn) under --input, no LLM")
     ap.add_argument("--ignore-case", action="store_true", help="case-insensitive --grep")
     ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd; no LLM without --task")
-    ap.add_argument("--backend", choices=["ollama", "lmstudio"], default="ollama", help="local LLM server (default: ollama)")
-    ap.add_argument("--host", help="override backend host (default: ollama=http://localhost:11434, lmstudio=http://localhost:1234)")
-    ap.add_argument("--model", help="model tag/id; default: qwen2.5:7b on ollama, first loaded model on lmstudio")
+    ap.add_argument("--backend", choices=["ollama", "lmstudio", "openai"], default="ollama", help="local LLM server (default: ollama)")
+    ap.add_argument("--host", help="override backend host (default: ollama=http://localhost:11434, lmstudio=http://localhost:1234; required for --backend openai)")
+    ap.add_argument("--model", help="model tag/id; default: qwen2.5:7b on ollama, first available model on lmstudio/openai")
     ap.add_argument("--max-words", type=int, default=300, help="target max words of output (default: 300)")
     args = ap.parse_args()
+    if args.backend == "openai" and not args.host:
+        ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
 
     if args.diff:

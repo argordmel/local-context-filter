@@ -148,6 +148,15 @@ class TestResolveModel(unittest.TestCase):
         with mock.patch.object(flt, "list_models", return_value={"b-model", "a-model"}):
             self.assertEqual(flt.resolve_model("lmstudio", "http://x", None), "a-model")
 
+    def test_openai_no_default_picks_sorted_first(self):
+        with mock.patch.object(flt, "list_models", return_value={"b-model", "a-model"}):
+            self.assertEqual(flt.resolve_model("openai", "http://x", None), "a-model")
+
+    def test_openai_explicit_model_missing_exits(self):
+        with mock.patch.object(flt, "list_models", return_value={"other-model"}):
+            with self.assertRaises(SystemExit):
+                flt.resolve_model("openai", "http://x", "missing-model")
+
     def test_no_models_available_exits(self):
         with mock.patch.object(flt, "list_models", return_value=set()):
             with self.assertRaises(SystemExit):
@@ -174,6 +183,12 @@ class TestListModels(unittest.TestCase):
             names = flt.list_models("lmstudio", "http://x")
         self.assertEqual(names, {"google/gemma-4-e2b", "qwen/qwen3.5-9b"})
 
+    def test_openai_parses_ids_same_shape_as_lmstudio(self):
+        payload = {"data": [{"id": "llama-3-8b-instruct"}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            names = flt.list_models("openai", "http://x")
+        self.assertEqual(names, {"llama-3-8b-instruct"})
+
     def test_unreachable_exits_with_backend_specific_hint(self):
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             with self.assertRaises(SystemExit) as ctx:
@@ -184,6 +199,11 @@ class TestListModels(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.list_models("lmstudio", "http://localhost:1234")
         self.assertIn("LM Studio", str(ctx.exception))
+
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            with self.assertRaises(SystemExit) as ctx:
+                flt.list_models("openai", "http://localhost:8080")
+        self.assertIn("openai not reachable", str(ctx.exception))
 
 
 class TestCallLLM(unittest.TestCase):
@@ -204,6 +224,22 @@ class TestCallLLM(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
             out = flt.call_llm("lmstudio", "http://x", "some-model", "task", "content", 100)
         self.assertEqual(out, "hi")
+
+    def test_openai_backend_uses_chat_completions_shape(self):
+        captured = {}
+
+        def fake_urlopen(req, timeout=120):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data)
+            payload = {"choices": [{"message": {"content": " filtered "}}]}
+            return self._fake_response(payload)
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            out = flt.call_llm("openai", "http://localhost:8080", "llama-3-8b", "task", "content", 100)
+        self.assertEqual(out, "filtered")
+        self.assertEqual(captured["url"], "http://localhost:8080/v1/chat/completions")
+        self.assertEqual(captured["body"]["model"], "llama-3-8b")
+        self.assertEqual(captured["body"]["messages"][0]["role"], "system")
 
     def test_truncates_oversized_content(self):
         big = "x" * (flt.MAX_CONTENT_CHARS + 1000)
@@ -233,6 +269,35 @@ class TestCallLLM(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.call_llm("ollama", "http://x", "qwen2.5:7b", "task", "content", 100)
         self.assertIn("cannot reach ollama", str(ctx.exception))
+
+
+class TestCLIArgGating(unittest.TestCase):
+    SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "filter.py")
+
+    def test_openai_backend_without_host_errors(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--backend", "openai", "--task", "x", "--input", self.SCRIPT],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--host is required for --backend openai", result.stderr)
+
+    def test_openai_backend_with_host_and_no_server_fails_late(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--backend", "openai", "--host", "http://localhost:59999",
+             "--task", "x", "--input", self.SCRIPT],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("openai not reachable", result.stdout + result.stderr)
+
+    def test_diff_and_grep_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--diff", "--grep", "x"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--diff cannot be combined", result.stderr)
 
 
 class TestReadDirectory(TempRepoTestCase):

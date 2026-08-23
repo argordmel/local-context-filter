@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama or LM Studio) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -8,9 +8,10 @@ description: Use when you need to feed a large file, log dump, or raw text blob 
 ## Overview
 
 Pipes raw content (files, logs, pasted text) through a local model — Ollama
-(default, `qwen2.5:7b`) or LM Studio (OpenAI-compatible server) — with a
-task description. The local model strips everything irrelevant and returns
-a compact result — that's what goes into Claude's context, not the raw blob.
+(default, `qwen2.5:7b`), LM Studio, or any other OpenAI-compatible server
+(llama.cpp server, vLLM, etc. via `--backend openai`) — with a task
+description. The local model strips everything irrelevant and returns a
+compact result — that's what goes into Claude's context, not the raw blob.
 
 ## When to Use
 
@@ -52,6 +53,10 @@ Pick one backend — both aren't meant to run at once (RAM):
   default `http://localhost:1234`) with a model loaded. Pass
   `--backend lmstudio`; `--model` optional (defaults to the first loaded
   model).
+- **Any other OpenAI-compatible server** (llama.cpp server, vLLM, etc.):
+  `--backend openai --host http://host:port` — `--host` is required, no
+  conventional default port to assume. `--model` optional (defaults to
+  the first model the server's `/v1/models` reports).
 
 The script self-checks before doing any work: it fails fast with
 `error: {backend} not reachable at {host}. Start it with ...` if the
@@ -72,6 +77,13 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 # LM Studio
 python3 ~/.claude/skills/local-context-filter/filter.py \
   --backend lmstudio \
+  --task "what you're trying to accomplish" \
+  --input /path/to/file.log \
+  --max-words 300
+
+# any other OpenAI-compatible server (llama.cpp, vLLM, ...)
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --backend openai --host http://localhost:8080 \
   --task "what you're trying to accomplish" \
   --input /path/to/file.log \
   --max-words 300
@@ -155,9 +167,9 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
 | `--diff` | off | filter `git diff HEAD` at cwd instead of `--input`; no-LLM without `--task` |
-| `--backend` | `ollama` | local LLM server: `ollama` or `lmstudio` |
-| `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`) |
-| `--model` | `qwen2.5:7b` (ollama) / first loaded model (lmstudio) | model tag/id |
+| `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |
+| `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`); **required** for `--backend openai` |
+| `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |
 | `--max-words` | 300 | target size of filtered output |
 
 ## Common Mistakes

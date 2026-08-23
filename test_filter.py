@@ -541,6 +541,19 @@ class TestListModels(unittest.TestCase):
                 flt.list_models("lmstudio", "http://localhost:1234")
         self.assertIn("LM Studio", str(ctx.exception))
 
+    def test_malformed_host_url_errors_cleanly_not_with_traceback(self):
+        with self.assertRaises(SystemExit) as ctx:
+            flt.list_models("ollama", "not-a-valid-url")
+        self.assertIn("not reachable", str(ctx.exception))
+
+    def test_malformed_json_response_errors_cleanly_not_with_traceback(self):
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(b"not json")
+        cm.__exit__.return_value = False
+        with mock.patch("urllib.request.urlopen", return_value=cm):
+            with self.assertRaises(SystemExit):
+                flt.list_models("ollama", "http://x")
+
 
 class TestRunningOllamaModel(unittest.TestCase):
     def _fake_response(self, payload):
@@ -659,6 +672,20 @@ class TestCallLLM(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.call_llm("ollama", "http://x", "qwen2.5:7b", "task", "content", 100)
         self.assertIn("cannot reach ollama", str(ctx.exception))
+
+    def test_malformed_host_url_errors_cleanly_not_with_traceback(self):
+        with self.assertRaises(SystemExit) as ctx:
+            flt.call_llm("ollama", "not-a-valid-url", "qwen2.5:7b", "task", "content", 100)
+        self.assertIn("invalid --host URL", str(ctx.exception))
+
+    def test_malformed_json_response_errors_cleanly_not_with_traceback(self):
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(b"not json")
+        cm.__exit__.return_value = False
+        with mock.patch("urllib.request.urlopen", return_value=cm):
+            with self.assertRaises(SystemExit) as ctx:
+                flt.call_llm("ollama", "http://x", "qwen2.5:7b", "task", "content", 100)
+        self.assertIn("isn't valid JSON", str(ctx.exception))
 
 
 class TestCallLLMChunked(unittest.TestCase):
@@ -814,6 +841,19 @@ class TestReadInput(TempRepoTestCase):
             fake_stdin.isatty.return_value = True
             with self.assertRaises(SystemExit):
                 flt.read_input(None)
+
+    def test_nonexistent_file_errors_cleanly_not_with_traceback(self):
+        with self.assertRaises(SystemExit) as ctx:
+            flt.read_input("does-not-exist.txt")
+        self.assertIn("does not exist", str(ctx.exception))
+
+    def test_binary_file_errors_cleanly_not_with_traceback(self):
+        full = os.path.join(self.tmpdir, "bin.dat")
+        with open(full, "wb") as f:
+            f.write(b"\xff\xfe\x00\x01")
+        with self.assertRaises(SystemExit) as ctx:
+            flt.read_input("bin.dat")
+        self.assertIn("not a readable text file", str(ctx.exception))
 
 
 class TestCLIEndToEnd(TempRepoTestCase):
@@ -1070,6 +1110,13 @@ class TestCLIEndToEnd(TempRepoTestCase):
     def test_run_and_grep_mutually_exclusive(self):
         result = self.run_cli("--run", "npm --version", "--grep", "x")
         self.assertNotEqual(result.returncode, 0)
+
+    def test_task_nonexistent_input_errors_cleanly_not_with_traceback(self):
+        result = self.run_cli("--task", "summarize", "--input", "does-not-exist.txt")
+        self.assertNotEqual(result.returncode, 0)
+        combined = result.stdout + result.stderr
+        self.assertIn("does not exist", combined)
+        self.assertNotIn("Traceback", combined)
 
     def test_count_and_diff_mutually_exclusive(self):
         result = self.run_cli("--count", "--diff")

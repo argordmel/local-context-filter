@@ -338,6 +338,7 @@ needs to be running to pass.
 | Nested symlink escaping root not read/listed (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
 | Nested symlink pointing *inside* root still works | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |
+| `--task` nonexistent/binary `--input` → clean error, not a traceback | `TestReadInput.test_nonexistent_file_errors_cleanly_not_with_traceback`, `test_binary_file_errors_cleanly_not_with_traceback`, `TestCLIEndToEnd.test_task_nonexistent_input_errors_cleanly_not_with_traceback` |
 | `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Ollama backend: list models, generate call | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
 | LM Studio backend: list models, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
@@ -348,6 +349,7 @@ needs to be running to pass.
 | Currently-loaded LM Studio model detection (`/api/v0/models`) | `TestRunningLmstudioModel` (all cases) |
 | Explicit `--model` validated against what's available | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
 | Backend unreachable → clear per-backend error | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
+| Malformed `--host` URL / malformed JSON response → clean error, not a traceback | `TestListModels.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback`, `TestCallLLM.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback` |
 | HTTP error surfaces server's response body | `TestCallLLM.test_http_error_surfaces_response_body_message` |
 | Oversized input truncated before sending to the model | `TestCallLLM.test_truncates_oversized_content` |
 

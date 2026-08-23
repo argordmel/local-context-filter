@@ -124,14 +124,14 @@ def list_models(backend, host):
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
             data = json.loads(resp.read())
-    except urllib.error.URLError:
+    except (urllib.error.URLError, ValueError):
         if backend == "ollama":
             start_hint = "`ollama serve`"
         elif backend == "lmstudio":
             start_hint = "LM Studio's local server (Developer tab > Start Server)"
         else:
             start_hint = "the server"
-        sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint}.")
+        sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint} (or check --host is a valid URL).")
     if backend == "ollama":
         return [m.get("name") for m in data.get("models", [])]
     return [m.get("id") for m in data.get("data", [])]
@@ -146,7 +146,7 @@ def running_ollama_model(host):
     try:
         with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as resp:
             data = json.loads(resp.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
+    except (urllib.error.URLError, ValueError):
         return None
     models = data.get("models", [])
     return models[0].get("name") if models else None
@@ -164,7 +164,7 @@ def running_lmstudio_model(host):
     try:
         with urllib.request.urlopen(f"{host}/api/v0/models", timeout=3) as resp:
             data = json.loads(resp.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
+    except (urllib.error.URLError, ValueError):
         return None
     for m in data.get("data", []):
         if m.get("state") == "loaded":
@@ -285,8 +285,13 @@ def read_input(path):
         real = confine_to_root(path)
         if os.path.isdir(real):
             return read_directory(real)
-        with open(real, "r", encoding="utf-8") as f:
-            return f.read()
+        if not os.path.exists(real):
+            sys.exit(f"error: '{path}' does not exist")
+        try:
+            with open(real, "r", encoding="utf-8") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            sys.exit(f"error: '{path}' is not a readable text file")
     if sys.stdin.isatty():
         sys.exit("error: no --input file and no stdin piped")
     return sys.stdin.read()
@@ -683,9 +688,12 @@ def call_llm(backend, host, model, task, content, max_words):
             "stream": False,
         }
 
-    req = urllib.request.Request(
-        url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
-    )
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+        )
+    except ValueError as e:
+        sys.exit(f"error: invalid --host URL '{url}': {e}")
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read())
@@ -698,6 +706,8 @@ def call_llm(backend, host, model, task, content, max_words):
         sys.exit(f"error: {backend} at {url} returned {e.code}: {body}")
     except urllib.error.URLError as e:
         sys.exit(f"error: cannot reach {backend} at {url} ({e}).")
+    except json.JSONDecodeError:
+        sys.exit(f"error: {backend} at {url} returned a response that isn't valid JSON")
 
     if backend == "ollama":
         return data.get("response", "").strip()

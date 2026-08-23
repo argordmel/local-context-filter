@@ -348,6 +348,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Symlink anidado que escapa la raíz no se lee/lista (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
 | Symlink anidado que apunta *adentro* de la raíz sigue funcionando | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` leyendo archivo / directorio / stdin | `TestReadInput`, `TestReadDirectory` |
+| `--task` con `--input` inexistente/binario → error limpio, no traceback | `TestReadInput.test_nonexistent_file_errors_cleanly_not_with_traceback`, `test_binary_file_errors_cleanly_not_with_traceback`, `TestCLIEndToEnd.test_task_nonexistent_input_errors_cleanly_not_with_traceback` |
 | `--task` sin `--input` y sin stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Backend Ollama: listar modelos, llamada generate | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
 | Backend LM Studio: listar modelos, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
@@ -358,6 +359,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Detección de modelo cargado en LM Studio (`/api/v0/models`) | `TestRunningLmstudioModel` (todos los casos) |
 | `--model` explícito validado contra lo disponible | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
 | Backend inalcanzable → error claro por backend | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
+| `--host` mal formado / respuesta JSON inválida → error limpio, no traceback | `TestListModels.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback`, `TestCallLLM.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback` |
 | Error HTTP muestra el mensaje del cuerpo de la respuesta | `TestCallLLM.test_http_error_surfaces_response_body_message` |
 | Entrada sobredimensionada truncada antes de enviarse al modelo | `TestCallLLM.test_truncates_oversized_content` |
 

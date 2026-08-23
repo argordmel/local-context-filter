@@ -896,6 +896,13 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
 
+    def test_run_input_single_file_errors_cleanly(self):
+        self.write("package.json", "{}")
+        result = self.run_cli("--run", "npm --version", "--input", "package.json")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("is not a directory", result.stdout + result.stderr)
+        self.assertNotIn("Traceback", result.stdout + result.stderr)
+
     def test_run_and_grep_mutually_exclusive(self):
         result = self.run_cli("--run", "npm --version", "--grep", "x")
         self.assertNotEqual(result.returncode, 0)

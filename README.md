@@ -306,6 +306,7 @@ needs to be running to pass.
 | `--run` rejects non-allowed binaries | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
 | `--run` executes allowed binary, prints output | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutually exclusive with `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
+| `--run --input` a single file errors cleanly, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
 | `--clean` deletes usage.json, idempotent | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |

@@ -232,7 +232,7 @@ python3 ~/.claude/skills/local-context-filter/filter.py --run "yarn install" --t
 
 Runs an `npm`/`npx`/`pnpm`/`yarn` command — only these four binaries are
 allowed, anything else is rejected before it executes — at `--input`
-(default: cwd), same confinement rules as elsewhere. Prints combined
+(default: cwd, must be a directory). Same confinement rules as elsewhere. Prints combined
 stdout+stderr as-is, no LLM involved, same zero-context-cost principle as
 `--diff`. Add `--task` to have the local model filter a noisy install log
 down to the actual errors/warnings that matter. Prints `NO_OUTPUT` if the

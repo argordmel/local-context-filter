@@ -543,6 +543,8 @@ def run_package_command(root, command):
     bin_name = os.path.basename(argv[0])
     if bin_name not in ALLOWED_RUN_BINS:
         sys.exit(f"error: --run only allows npm/npx/pnpm/yarn commands, got '{bin_name}'")
+    if not os.path.isdir(root):
+        sys.exit(f"error: '{root}' is not a directory")
     try:
         result = subprocess.run(
             argv, cwd=root, capture_output=True, text=True, timeout=RUN_TIMEOUT,

@@ -316,6 +316,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--run` rechaza binarios no permitidos | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
 | `--run` ejecuta binario permitido, imprime salida | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutuamente excluyente con `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
+| `--run --input` archivo único falla limpio, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totales por modo, sentinel `NO_USAGE_DATA` | `TestGenerateReport` (todos los casos), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutuamente excluyentes con otros modos | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
 | `--clean` borra usage.json, idempotente | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |

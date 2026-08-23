@@ -126,8 +126,28 @@ def list_models(backend, host):
     return {m.get("id") for m in data.get("data", [])}
 
 
+def running_ollama_model(host):
+    """Return the name of the model currently loaded in Ollama's memory (via
+    /api/ps), or None if none is loaded or the check fails for any reason.
+
+    Never raises — this is a best-effort convenience, not a requirement.
+    """
+    try:
+        with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, json.JSONDecodeError):
+        return None
+    models = data.get("models", [])
+    return models[0].get("name") if models else None
+
+
 def resolve_model(backend, host, model):
-    """Validate an explicit --model, or auto-pick one when none was given."""
+    """Validate an explicit --model, or auto-pick one when none was given.
+
+    Auto-pick order for ollama: the model currently loaded in memory (so it
+    matches whatever you're already running, no extra load time) > the
+    hardcoded default if pulled > alphabetically first pulled model.
+    """
     names = list_models(backend, host)
     if model:
         if model not in names:
@@ -139,6 +159,10 @@ def resolve_model(backend, host, model):
                 fix = "load it on the server first"
             sys.exit(f"error: model '{model}' not available on {backend}. {fix} (available: {', '.join(sorted(names)) or 'none'}).")
         return model
+    if backend == "ollama":
+        running = running_ollama_model(host)
+        if running and running in names:
+            return running
     if backend in DEFAULT_MODELS and DEFAULT_MODELS[backend] in names:
         return DEFAULT_MODELS[backend]
     if names:

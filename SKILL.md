@@ -61,8 +61,12 @@ because no backend is up, don't try to start one yourself — see
 Pick one backend — both aren't meant to run at once (RAM):
 
 - **Ollama** (default): `ollama serve` running locally
-  (`curl -s http://localhost:11434/api/tags` to check). Model pulled:
-  `ollama pull qwen2.5:7b` (or pass `--model` for another tag).
+  (`curl -s http://localhost:11434/api/tags` to check). Without `--model`,
+  it auto-picks whatever model is currently loaded in Ollama's memory
+  (`/api/ps`) — matches whatever you're already running, no extra load
+  time. Falls back to `qwen2.5:7b` if pulled, else the alphabetically
+  first pulled model, if nothing is currently loaded. Pass `--model` to
+  override.
 - **LM Studio**: local server started (Developer tab > Start Server,
   default `http://localhost:1234`) with a model loaded. Pass
   `--backend lmstudio`; `--model` optional (defaults to the first loaded
@@ -276,7 +280,7 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--clean` | off | delete usage.json; cannot combine with anything else |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |
 | `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`); **required** for `--backend openai` |
-| `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |
+| `--model` | ollama: currently loaded model, else `qwen2.5:7b`, else first pulled / lmstudio, openai: first available model | model tag/id |
 | `--max-words` | 300 | target size of filtered output (applies per-chunk when content is split, see below) |
 
 ## Usage log (local, private)

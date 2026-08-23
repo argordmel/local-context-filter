@@ -72,12 +72,17 @@ ln -s ~/code/local-context-filter ~/.claude/skills/local-context-filter
     vLLM, ...): `--backend openai --host http://host:puerto` — `--host` es
     obligatorio, no hay puerto convencional que asumir.
 
-**Sin modelo default hardcodeado para LM Studio/openai.** Solo Ollama
-tiene uno (`qwen2.5:7b`). Sin `--model`, LM Studio y openai siempre toman
-el modelo que ordena primero alfabéticamente entre lo que reporte
-`/v1/models` — no es un modelo "preferido", es puro orden alfabético
-sobre lo que tengas cargado en tu máquina. Pasá `--model` explícito si
-quieres uno específico.
+**Ollama auto-detecta el modelo que ya tienes corriendo.** Sin `--model`,
+consulta `/api/ps` para ver qué modelo está cargado en memoria en Ollama y
+usa ese — sin tiempo extra de carga, siempre coincide con lo que ya tienes
+levantado. Si no hay nada cargado, cae a `qwen2.5:7b` si está pulled, o si
+no, al primero alfabéticamente entre los pulled.
+
+**Sin modelo default hardcodeado para LM Studio/openai.** Sin `--model`,
+LM Studio y openai siempre toman el modelo que ordena primero
+alfabéticamente entre lo que reporte `/v1/models` — no es un modelo
+"preferido", es puro orden alfabético sobre lo que tengas cargado en tu
+máquina. Pasá `--model` explícito si quieres uno específico.
 
 Solo un backend necesita correr a la vez — elige uno con `--backend`.
 
@@ -307,7 +312,8 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Backend LM Studio: listar modelos, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
 | Backend genérico `openai` | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
 | `--backend openai` requiere `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |
-| Auto-resolución de modelo (default de Ollama, fallback alfabético) | `TestResolveModel` (todos los casos) |
+| Auto-resolución de modelo (modelo cargado en Ollama, default, fallback alfabético) | `TestResolveModel` (todos los casos) |
+| Detección de modelo cargado en Ollama (`/api/ps`) | `TestRunningOllamaModel` (todos los casos) |
 | `--model` explícito validado contra lo disponible | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
 | Backend inalcanzable → error claro por backend | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
 | Error HTTP muestra el mensaje del cuerpo de la respuesta | `TestCallLLM.test_http_error_surfaces_response_body_message` |

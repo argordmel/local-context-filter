@@ -302,12 +302,24 @@ class TestResolveModel(unittest.TestCase):
                 flt.resolve_model("ollama", "http://x", "qwen2.5:7b")
 
     def test_no_model_picks_ollama_default_when_present(self):
-        with mock.patch.object(flt, "list_models", return_value={"qwen2.5:7b", "gpt-oss:20b"}):
+        with mock.patch.object(flt, "list_models", return_value={"qwen2.5:7b", "gpt-oss:20b"}), \
+             mock.patch.object(flt, "running_ollama_model", return_value=None):
             self.assertEqual(flt.resolve_model("ollama", "http://x", None), "qwen2.5:7b")
 
     def test_no_model_falls_back_to_sorted_first(self):
-        with mock.patch.object(flt, "list_models", return_value={"zeta", "alpha"}):
+        with mock.patch.object(flt, "list_models", return_value={"zeta", "alpha"}), \
+             mock.patch.object(flt, "running_ollama_model", return_value=None):
             self.assertEqual(flt.resolve_model("ollama", "http://x", None), "alpha")
+
+    def test_no_model_prefers_currently_running_ollama_model(self):
+        with mock.patch.object(flt, "list_models", return_value={"qwen2.5:7b", "qwen3:8b"}), \
+             mock.patch.object(flt, "running_ollama_model", return_value="qwen3:8b"):
+            self.assertEqual(flt.resolve_model("ollama", "http://x", None), "qwen3:8b")
+
+    def test_running_model_not_in_pulled_list_ignored(self):
+        with mock.patch.object(flt, "list_models", return_value={"qwen2.5:7b"}), \
+             mock.patch.object(flt, "running_ollama_model", return_value="stale-unpulled-model"):
+            self.assertEqual(flt.resolve_model("ollama", "http://x", None), "qwen2.5:7b")
 
     def test_lmstudio_no_default_picks_sorted_first(self):
         with mock.patch.object(flt, "list_models", return_value={"b-model", "a-model"}):
@@ -364,6 +376,28 @@ class TestListModels(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.list_models("lmstudio", "http://localhost:1234")
         self.assertIn("LM Studio", str(ctx.exception))
+
+
+class TestRunningOllamaModel(unittest.TestCase):
+    def _fake_response(self, payload):
+        body = json.dumps(payload).encode("utf-8")
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(body)
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_returns_loaded_model_name(self):
+        payload = {"models": [{"name": "qwen3:8b"}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            self.assertEqual(flt.running_ollama_model("http://x"), "qwen3:8b")
+
+    def test_no_model_loaded_returns_none(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response({"models": []})):
+            self.assertIsNone(flt.running_ollama_model("http://x"))
+
+    def test_unreachable_returns_none_not_exit(self):
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            self.assertIsNone(flt.running_ollama_model("http://x"))
 
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             with self.assertRaises(SystemExit) as ctx:

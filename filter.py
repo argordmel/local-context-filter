@@ -6,6 +6,7 @@ Usage:
   cat file | python3 filter.py --task "TASK"
   python3 filter.py --grep PATTERN [--input DIR] [--task "TASK"]
   python3 filter.py --diff [--input PATH] [--task "TASK"]
+  python3 filter.py --log [--limit N] [--input PATH] [--task "TASK"]
   python3 filter.py --ls [--input DIR] [--task "TASK"]
   python3 filter.py --find PATTERN [--input DIR] [--task "TASK"]
   python3 filter.py --run "npm install" [--input DIR] [--task "TASK"]
@@ -30,6 +31,11 @@ local model narrow a large match list down to what's relevant to that task.
 LLM involved. Add --task to have the local model filter it down to what's
 relevant to that task instead.
 
+--log runs `git log` (most recent --limit commits, default 50) at cwd, or
+scoped to --input (a single file or directory) if given, and prints it
+as-is — no LLM involved. Add --task to have the local model summarize it
+down to what's relevant to that task instead.
+
 --ls recursively lists files and directories under --input (default: cwd),
 skipping the same excluded dirs as --grep — no LLM, no file contents read.
 Add --task to have the local model narrow a large listing down to what's
@@ -43,8 +49,8 @@ large match list down to what's relevant.
 --run runs an npm/npx/pnpm/yarn command (only these four binaries are
 allowed) at --input (default: cwd) and prints combined stdout+stderr — no
 LLM involved. Add --task to have the local model filter noisy install
-output down to what's relevant (e.g. actual errors). --diff, --grep, --ls,
---find, and --run are all mutually exclusive with each other.
+output down to what's relevant (e.g. actual errors). --diff, --log, --grep,
+--ls, --find, --run, and --count are all mutually exclusive with each other.
 
 --count counts lines per file (like `wc -l`) under --input (default: cwd),
 skipping the same excluded dirs as --grep/--ls/--find — no LLM, no file
@@ -596,6 +602,20 @@ def read_directory(root):
     return "\n\n".join(chunks)
 
 
+def require_git_repo(git_cwd):
+    """Exit with an error unless git_cwd is inside a git work tree."""
+    try:
+        check = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"], cwd=git_cwd, capture_output=True, text=True, timeout=10,
+        )
+    except FileNotFoundError:
+        sys.exit("error: git not found on PATH")
+    except PermissionError:
+        sys.exit("error: git found on PATH but is not executable")
+    if check.returncode != 0:
+        sys.exit(f"error: '{git_cwd}' is not inside a git repository")
+
+
 def get_git_diff(root, path=None):
     """Return `git diff HEAD` (staged + unstaged) at root, as text.
 
@@ -608,23 +628,33 @@ def get_git_diff(root, path=None):
     is still computed relative to that same parent, so scoping is unaffected.
     """
     git_cwd = root if os.path.isdir(root) else os.path.dirname(root)
-    try:
-        check = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"], cwd=git_cwd, capture_output=True, text=True, timeout=10,
-        )
-    except FileNotFoundError:
-        sys.exit("error: git not found on PATH")
-    except PermissionError:
-        sys.exit("error: git found on PATH but is not executable")
-    if check.returncode != 0:
-        sys.exit(f"error: '{root}' is not inside a git repository")
-
+    require_git_repo(git_cwd)
     cmd = ["git", "diff", "HEAD"]
     if path:
         cmd += ["--", os.path.relpath(path, git_cwd)]
     result = subprocess.run(cmd, cwd=git_cwd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         sys.exit(f"error: git diff failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def get_git_log(root, path=None, limit=50):
+    """Return the most recent `limit` `git log` commits at root, as text.
+
+    If path is given, scopes the log to that file/directory's history (must
+    already be confined to root by the caller). Mirrors get_git_diff's
+    single-file root handling.
+    """
+    git_cwd = root if os.path.isdir(root) else os.path.dirname(root)
+    require_git_repo(git_cwd)
+    cmd = ["git", "log", f"-{limit}"]
+    if path:
+        cmd += ["--", os.path.relpath(path, git_cwd)]
+    result = subprocess.run(cmd, cwd=git_cwd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        if "does not have any commits yet" in result.stderr:
+            return ""
+        sys.exit(f"error: git log failed: {result.stderr.strip()}")
     return result.stdout
 
 
@@ -785,6 +815,8 @@ def main():
     ap.add_argument("--grep", metavar="PATTERN", help="exact regex search (like grep -rn) under --input, no LLM")
     ap.add_argument("--ignore-case", action="store_true", help="case-insensitive --grep")
     ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd (or --input path); no LLM without --task")
+    ap.add_argument("--log", action="store_true", help="filter `git log` at cwd (or --input path); no LLM without --task")
+    ap.add_argument("--limit", type=int, default=50, metavar="N", help="max commits for --log (default: 50)")
     ap.add_argument("--ls", action="store_true", help="recursively list files/dirs under --input (default: cwd), no LLM without --task")
     ap.add_argument("--find", metavar="PATTERN", help="find files/dirs by basename glob (like `find -iname`) under --input, no LLM")
     ap.add_argument("--run", metavar="COMMAND", help="run an npm/npx/pnpm/yarn command (e.g. 'npm install') at --input (default: cwd) and print its output; no LLM without --task")
@@ -798,11 +830,11 @@ def main():
     args = ap.parse_args()
 
     other_modes = (
-        args.diff or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
+        args.diff or args.log or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
         or args.count or bool(args.task) or bool(args.input)
     )
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--grep/--ls/--find/--run/--count/--task/--input")
+        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--task/--input")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:
@@ -818,8 +850,8 @@ def main():
         print("USAGE_LOG_CLEARED" if existed else "NO_USAGE_DATA")
         return
 
-    if sum([args.diff, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count]) > 1:
-        ap.error("--diff, --grep, --ls, --find, --run, and --count are mutually exclusive")
+    if sum([args.diff, args.log, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count]) > 1:
+        ap.error("--diff, --log, --grep, --ls, --find, --run, and --count are mutually exclusive")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
@@ -878,6 +910,25 @@ def main():
         result = call_llm_chunked(args.backend, host, model, args.task, diff, args.max_words)
         print(result)
         log_usage("diff", args.backend, len(diff), len(result))
+        return
+
+    if args.log:
+        if args.limit < 1:
+            ap.error("--limit must be a positive integer")
+        log_path = confine_to_root(args.input) if args.input else None
+        git_log = get_git_log(CONFINE_ROOT, log_path, args.limit)
+        if not git_log.strip():
+            print("NO_COMMITS")
+            log_usage("log", None, 0, 0)
+            return
+        if not args.task:
+            print(git_log, end="" if git_log.endswith("\n") else "\n")
+            log_usage("log", None, len(git_log), len(git_log))
+            return
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm_chunked(args.backend, host, model, args.task, git_log, args.max_words)
+        print(result)
+        log_usage("log", args.backend, len(git_log), len(result))
         return
 
     if args.count:

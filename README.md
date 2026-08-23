@@ -24,6 +24,9 @@ Modes:
   summary) — see [Trusting the summary](#trusting-the-summary).
 - **`--diff`** — filters `git diff HEAD` at cwd (or scoped to `--input`);
   raw diff (free) without `--task`, or model-filtered with it.
+- **`--log`** — filters `git log` (most recent `--limit` commits, default
+  50) at cwd (or scoped to `--input`); raw log (free) without `--task`, or
+  model-summarized with it.
 - **`--ls`** — recursively lists files/dirs under `--input` (default: cwd),
   no LLM, zero Claude tokens; use instead of `bash ls`/`tree` for exploring
   project structure.
@@ -155,6 +158,15 @@ python3 ~/.claude/skills/local-context-filter/filter.py --diff --input README.md
 # same, filtered by task
 python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
 
+# raw git log, last 50 commits, no LLM, no Claude tokens
+python3 ~/.claude/skills/local-context-filter/filter.py --log
+
+# same, scoped to one file with fewer commits
+python3 ~/.claude/skills/local-context-filter/filter.py --log --limit 10 --input README.md
+
+# same, summarized by task
+python3 ~/.claude/skills/local-context-filter/filter.py --log --task "what changed recently around auth"
+
 # recursive directory listing, no LLM, no Claude tokens
 python3 ~/.claude/skills/local-context-filter/filter.py --ls
 
@@ -223,6 +235,8 @@ project) or a project's own `CLAUDE.md`:
 For exact string/regex search in a project, prefer the `local-context-filter` skill's `--grep` mode over reading files directly or built-in grep tools — it costs zero Claude context tokens. Only fall back to reading files when full file content/formatting is needed, not just matching lines.
 
 For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
+
+For reviewing/summarizing commit history, prefer the same skill's `--log` mode (`git log` under the hood) over running `git log` and pasting its output into context — `--log` alone (no `--task`) is free too, and `--limit` caps how many commits it shows (default 50). Add `--task` only when you want the local model to summarize it (e.g. "what changed around auth recently").
 
 Never run `bash ls`, `find`, or `tree` to explore a project's file/directory structure — always use the same skill's `--ls` mode to list a folder, or `--find` to locate a file by name. Both are free, zero Claude context tokens, same as `--grep`. This applies even to a simple one-off "list the files in X" request — don't reach for Bash out of habit.
 
@@ -328,7 +342,7 @@ python3 ~/.claude/skills/local-context-filter/test_filter.py -v
 ```
 
 `unittest`, stdlib only. Mocks all network calls (Ollama/LM Studio/generic
-OpenAI-compatible) and uses real temp git repos for `--diff` — no server
+OpenAI-compatible) and uses real temp git repos for `--diff`/`--log` — no server
 needs to be running to pass.
 
 ### Coverage checklist
@@ -351,6 +365,13 @@ needs to be running to pass.
 | `--diff` outside a git repo → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
 | `--diff` outside a git repo → clean short error, not git's `--no-index` usage dump | `TestCLIEndToEnd.test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump`, `test_diff_input_not_a_git_repo_errors_cleanly` |
 | `--diff` + `--grep` mutually exclusive | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
+| `--log` whole repo, raw | `TestGitLog.test_shows_commit_message`, `TestCLIEndToEnd.test_log_prints_raw_log` |
+| `--log --limit` caps commit count | `TestGitLog.test_limit_caps_commit_count`, `TestCLIEndToEnd.test_log_limit_caps_output` |
+| `--log --input` scoped to one path | `TestGitLog.test_path_scopes_log_to_single_file`, `TestCLIEndToEnd.test_log_scoped_to_input` |
+| `--log` with root as a single file doesn't crash on cwd | `TestGitLog.test_file_as_root_uses_parent_dir_as_cwd` |
+| `--log` no commits yet → `NO_COMMITS` | `TestCLIEndToEnd.test_log_no_commits_prints_sentinel` |
+| `--log` outside a git repo → error | `TestGitLog.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_log_not_a_git_repo_errors_cleanly` |
+| `--log` + `--diff` mutually exclusive, `--limit 0` rejected | `TestCLIArgGating.test_log_and_diff_mutually_exclusive`, `test_log_limit_zero_rejected` |
 | `--ls` lists files/dirs, skips excluded dirs | `TestListTree.test_lists_files_and_dirs`, `TestListTree.test_skips_excluded_dirs`, `TestCLIEndToEnd.test_ls_prints_entries` |
 | `--ls` empty dir → `NO_ENTRIES` | `TestListTree.test_empty_dir_returns_empty_list`, `TestCLIEndToEnd.test_ls_empty_dir_prints_sentinel` |
 | `--ls` scoped to `--input` | `TestCLIEndToEnd.test_ls_scoped_to_input` |

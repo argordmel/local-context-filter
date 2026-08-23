@@ -477,6 +477,49 @@ class TestGitDiff(TempRepoTestCase):
         self.assertIn("line2", diff)
 
 
+class TestGitLog(TempRepoTestCase):
+    def _init_repo(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=self.tmpdir, check=True)
+        self.write("a.txt", "line1\n")
+        subprocess.run(["git", "add", "a.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=self.tmpdir, check=True)
+
+    def test_not_a_git_repo_errors(self):
+        with self.assertRaises(SystemExit):
+            flt.get_git_log(flt.ROOT)
+
+    def test_shows_commit_message(self):
+        self._init_repo()
+        log = flt.get_git_log(flt.ROOT)
+        self.assertIn("init", log)
+
+    def test_limit_caps_commit_count(self):
+        self._init_repo()
+        for i in range(3):
+            self.write("a.txt", f"line{i}\n")
+            subprocess.run(["git", "commit", "-q", "-am", f"change {i}"], cwd=self.tmpdir, check=True)
+        log = flt.get_git_log(flt.ROOT, limit=2)
+        self.assertEqual(log.count("commit "), 2)
+
+    def test_path_scopes_log_to_single_file(self):
+        self._init_repo()
+        self.write("b.txt", "line1\n")
+        subprocess.run(["git", "add", "b.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add b"], cwd=self.tmpdir, check=True)
+        log = flt.get_git_log(flt.ROOT, os.path.join(flt.ROOT, "b.txt"))
+        self.assertIn("add b", log)
+        self.assertNotIn("init", log)
+
+    def test_file_as_root_uses_parent_dir_as_cwd(self):
+        """Mirrors TestGitDiff's equivalent — see get_git_diff docstring for why."""
+        self._init_repo()
+        file_root = os.path.join(self.tmpdir, "a.txt")
+        log = flt.get_git_log(file_root, file_root)
+        self.assertIn("init", log)
+
+
 class TestRunPackageCommand(TempRepoTestCase):
     def test_non_executable_binary_on_path_errors_cleanly(self):
         fake_bin_dir = os.path.join(self.tmpdir, "fakebin")
@@ -876,6 +919,22 @@ class TestCLIArgGating(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("mutually exclusive", result.stderr)
 
+    def test_log_and_diff_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--log", "--diff"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_log_limit_zero_rejected(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--log", "--limit", "0"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--limit must be a positive integer", result.stderr)
+
     def test_ls_and_diff_mutually_exclusive(self):
         result = subprocess.run(
             [sys.executable, self.SCRIPT, "--ls", "--diff"],
@@ -1092,6 +1151,40 @@ class TestCLIEndToEnd(TempRepoTestCase):
         combined = result.stdout + result.stderr
         self.assertIn("not inside a git repository", combined)
         self.assertNotIn("--no-index", combined)
+
+    def test_log_prints_raw_log(self):
+        self._init_repo()
+        result = self.run_cli("--log")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("init", result.stdout)
+
+    def test_log_no_commits_prints_sentinel(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.tmpdir, check=True)
+        result = self.run_cli("--log")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_COMMITS")
+
+    def test_log_scoped_to_input(self):
+        self._init_repo()
+        self.write("b.txt", "line1\n")
+        subprocess.run(["git", "add", "b.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add b"], cwd=self.tmpdir, check=True)
+        result = self.run_cli("--log", "--input", "b.txt")
+        self.assertIn("add b", result.stdout)
+        self.assertNotIn("init", result.stdout)
+
+    def test_log_limit_caps_output(self):
+        self._init_repo()
+        for i in range(3):
+            self.write("a.txt", f"line{i}\n")
+            subprocess.run(["git", "commit", "-q", "-am", f"change {i}"], cwd=self.tmpdir, check=True)
+        result = self.run_cli("--log", "--limit", "1")
+        self.assertEqual(result.stdout.count("commit "), 1)
+
+    def test_log_not_a_git_repo_errors_cleanly(self):
+        result = self.run_cli("--log")
+        combined = result.stdout + result.stderr
+        self.assertIn("not inside a git repository", combined)
 
     def test_ls_prints_entries(self):
         self.write("a.txt", "hi")

@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), to find a file by name (glob, `--find`), to count lines per file (`--count`), or to run an npm/npx/pnpm/yarn command (`--run`), all without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), to find a file by name (glob, `--find`), to count lines per file (`--count`), to summarize commit history (`--log`), or to run an npm/npx/pnpm/yarn command (`--run`), all without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -23,6 +23,8 @@ compact result — that's what goes into Claude's context, not the raw blob.
   cheaper and more precise than the LLM-filter mode for this
 - Reviewing/summarizing the current working tree changes (`--diff`, see
   below) without pasting a large `git diff` into the conversation
+- Reviewing/summarizing commit history (`--log`, see below) without
+  pasting a large `git log` into the conversation
 - Listing a directory tree (`--ls`, see below) — use this instead of
   `bash ls`/`tree` so path exploration also costs zero Claude tokens
 - Finding a file by name (`--find`, see below) — use this instead of
@@ -196,6 +198,27 @@ model filter the diff down to what's relevant. Prints `NO_CHANGES` if the
 diff is empty, exits with an error if cwd isn't a git repo. Cannot combine
 with `--grep`.
 
+### Commit history (`--log`)
+
+```bash
+# last 50 commits, whole repo, no LLM
+python3 ~/.claude/skills/local-context-filter/filter.py --log
+
+# scoped to one file/directory, fewer commits
+python3 ~/.claude/skills/local-context-filter/filter.py --log --limit 10 --input README.md
+
+# summarized by task
+python3 ~/.claude/skills/local-context-filter/filter.py --log --task "what changed around auth recently"
+```
+
+Runs `git log` (most recent `--limit` commits, default 50) at cwd and prints
+it as-is — no LLM involved, zero context cost, same as `--diff` alone. Pass
+`--input` (a file or directory, same confinement rules as elsewhere) to scope
+the log to just that path's history instead of the whole repo. Add `--task`
+to have the local model summarize it down to what's relevant. Prints
+`NO_COMMITS` if the log is empty, exits with an error if cwd isn't a git
+repo. Cannot combine with `--grep`/`--diff`/`--ls`/`--find`/`--run`/`--count`.
+
 ### Directory listing (`--ls`) — no LLM, no context cost
 
 ```bash
@@ -231,7 +254,7 @@ Finds files/dirs whose **basename** matches a glob pattern — like
 file's own basename is tested. Directories print with a trailing `/`. Prints `NO_MATCHES` if
 nothing matches, caps at 500 like `--grep`. Add `--ignore-case` for
 case-insensitive matching, `--task` to have the local model narrow a large
-match list. Mutually exclusive with `--grep`/`--diff`/`--ls`.
+match list. Mutually exclusive with `--grep`/`--diff`/`--log`/`--ls`.
 
 ### Line counting (`--count`) — no LLM, no context cost
 
@@ -247,7 +270,7 @@ directory (default: cwd) recurses, same confinement/exclusion rules as
 `--grep`/`--ls`/`--find`, and appends an `N TOTAL` line. No file content is included in the output, only counts.
 Prints `NO_ENTRIES` if the directory has no readable text files. Add
 `--task` to have the local model narrow a large listing down to what's
-relevant. Mutually exclusive with `--grep`/`--diff`/`--ls`/`--find`/`--run`.
+relevant. Mutually exclusive with `--grep`/`--diff`/`--log`/`--ls`/`--find`/`--run`.
 
 ### Package manager commands (`--run`)
 
@@ -266,7 +289,7 @@ down to the actual errors/warnings that matter. Raw output (no `--task`)
 over ~24k chars is truncated with a stderr warning, same budget as the
 LLM-filter path — add `--task` instead of relying on the raw dump for a
 very noisy install. Prints `NO_OUTPUT` if the command produced nothing.
-10-minute timeout. Mutually exclusive with `--grep`/`--diff`/`--ls`/`--find`/`--count`.
+10-minute timeout. Mutually exclusive with `--grep`/`--diff`/`--log`/`--ls`/`--find`/`--count`.
 
 **Security note:** the allowlist and directory confinement stop `--run`
 from being a general command runner, but they don't stop what `npm`/
@@ -310,10 +333,12 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | Flag | Default | Purpose |
 |---|---|---|
 | `--task` | required unless `--grep` used alone | what you're using this content for — steers what's kept |
-| `--input` | stdin (LLM mode) / cwd (`--grep`, `--diff`) | file or directory to filter/search/diff |
+| `--input` | stdin (LLM mode) / cwd (`--grep`, `--diff`, `--log`) | file or directory to filter/search/diff/log |
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
 | `--diff` | off | filter `git diff HEAD` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
+| `--log` | off | filter `git log` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
+| `--limit` | 50 | max commits for `--log` |
 | `--ls` | off | recursively list files/dirs under `--input` (default: cwd); no-LLM without `--task` |
 | `--find` | — | glob pattern for basename search (like `find -iname`); no-LLM without `--task` |
 | `--count` | off | count lines per file under `--input` (like `wc -l`); no-LLM without `--task` |

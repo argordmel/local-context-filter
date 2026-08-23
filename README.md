@@ -1,5 +1,7 @@
 # Skill: Local Context Filter
 
+*[Leer en español](README.es.md)*
+
 A [Claude Code](https://claude.com/claude-code) skill (`local-context-filter`) that
 offloads big/raw context to a **local** LLM before anything reaches Claude:
 
@@ -55,7 +57,28 @@ ln -s ~/code/local-context-filter ~/.claude/skills/local-context-filter
     `--backend openai --host http://host:port` — `--host` is required,
     there's no conventional default port to assume.
 
+**No hardcoded default model for LM Studio/openai.** Only Ollama has one
+(`qwen2.5:7b`). Without `--model`, LM Studio and openai always pick
+whichever model sorts first alphabetically among what `/v1/models`
+reports — not a "preferred" model, just alphabetical order on whatever
+happens to be loaded on your machine. Pass `--model` explicitly if you
+want a specific one.
+
 Only one backend needs to run at a time — pick one with `--backend`.
+
+**Nothing auto-starts a service for you — not Ollama, not LM Studio.**
+Starting/stopping the backend is on you; the script only checks whether
+it's reachable and fails with a clear error (and a fix command) if it
+isn't. Claude doesn't warn you beforehand either — it just runs the
+command and only finds out from that error if the backend is down.
+
+**Telling Claude what's running:** just say so in chat, plain language —
+e.g. *"I have Ollama running"* or *"LM Studio is up"*. No special syntax
+needed; Claude passes the right `--backend` on the commands it runs for
+the rest of that conversation. Without a model named, it picks whatever
+loads first (see above) — mention a specific model only if you want that
+one used instead. Say it again in a future session if you want it
+remembered there too — it isn't persisted automatically.
 
 ## Usage
 

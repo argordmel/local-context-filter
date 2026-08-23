@@ -44,6 +44,12 @@ keeps working regardless of whether Ollama or LM Studio is running.
 
 ## Requirements
 
+Nothing auto-starts a service — not Ollama, not LM Studio. The script never
+launches a backend for you; it only checks reachability and fails with a
+clear error if the one you selected isn't running. If `--task` mode fails
+because no backend is up, don't try to start one yourself — see
+[Fallback](#fallback-when-no-backend-is-reachable) above.
+
 Pick one backend — both aren't meant to run at once (RAM):
 
 - **Ollama** (default): `ollama serve` running locally

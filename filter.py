@@ -315,9 +315,16 @@ def find_search(root, pattern, ignore_case=False, excluded_dirs=None):
     """Find files/dirs whose basename matches a glob `pattern` (like `find -iname`),
     skipping excluded_dirs (default: EXCLUDED_DIRS). Directories are suffixed
     with '/'. No LLM, no file contents read — only names are compared.
+
+    If root is a single file, just tests that file's own basename against
+    the pattern instead of walking (os.walk yields nothing for a file path).
     """
     excluded = EXCLUDED_DIRS if excluded_dirs is None else excluded_dirs
     check_pattern = pattern.lower() if ignore_case else pattern
+    if os.path.isfile(root):
+        name = os.path.basename(root)
+        check_name = name.lower() if ignore_case else name
+        return [name] if fnmatch.fnmatch(check_name, check_pattern) else []
     matches = []
     truncated = False
     for dirpath, dirnames, filenames in os.walk(root):

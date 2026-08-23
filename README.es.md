@@ -309,6 +309,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--find` sin coincidencias → `NO_MATCHES` | `TestCLIEndToEnd.test_find_no_matches_prints_sentinel` |
 | `--find` salta excluidos, excludes custom | `TestFindSearch.test_skips_excluded_dirs`, `test_custom_excluded_dirs` |
 | `--find` mutuamente excluyente con `--grep` | `TestCLIArgGating.test_find_and_grep_mutually_exclusive` |
+| `--find --input` acotado a un archivo único | `TestFindSearch.test_single_file_input_matching_pattern`, `test_single_file_input_not_matching_pattern`, `test_single_file_input_ignore_case`, `TestCLIEndToEnd.test_find_input_single_file_is_matched` |
 | Excludes de proyecto (`.claude/local-context-filter.json`) | `TestProjectExcludes` (todos los casos), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
 | `--count` archivo único, directorio + `TOTAL`, sentinel dir vacío | `TestCLIEndToEnd.test_count_single_file`, `test_count_directory_includes_total`, `test_count_empty_dir_prints_sentinel` |
 | `--count` mutuamente excluyente con `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |

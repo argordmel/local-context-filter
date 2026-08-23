@@ -299,6 +299,7 @@ needs to be running to pass.
 | `--find` no matches → `NO_MATCHES` | `TestCLIEndToEnd.test_find_no_matches_prints_sentinel` |
 | `--find` skips excluded dirs, custom excludes | `TestFindSearch.test_skips_excluded_dirs`, `test_custom_excluded_dirs` |
 | `--find` mutually exclusive with `--grep` | `TestCLIArgGating.test_find_and_grep_mutually_exclusive` |
+| `--find --input` scoped to a single file | `TestFindSearch.test_single_file_input_matching_pattern`, `test_single_file_input_not_matching_pattern`, `test_single_file_input_ignore_case`, `TestCLIEndToEnd.test_find_input_single_file_is_matched` |
 | Project excludes (`.claude/local-context-filter.json`) | `TestProjectExcludes` (all cases), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
 | `--count` single file, directory + `TOTAL`, empty dir sentinel | `TestCLIEndToEnd.test_count_single_file`, `test_count_directory_includes_total`, `test_count_empty_dir_prints_sentinel` |
 | `--count` mutually exclusive with `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |

@@ -201,7 +201,8 @@ python3 ~/.claude/skills/local-context-filter/filter.py --find "README*" --ignor
 Finds files/dirs whose **basename** matches a glob pattern — like
 `find -iname`, not a content search (use `--grep` for content). Rooted at
 `--input` (default: cwd), same confinement/exclusion rules as `--grep`/
-`--ls`. Directories print with a trailing `/`. Prints `NO_MATCHES` if
+`--ls`; `--input` can also point to a single file, in which case just that
+file's own basename is tested. Directories print with a trailing `/`. Prints `NO_MATCHES` if
 nothing matches, caps at 500 like `--grep`. Add `--ignore-case` for
 case-insensitive matching, `--task` to have the local model narrow a large
 match list. Mutually exclusive with `--grep`/`--diff`/`--ls`.

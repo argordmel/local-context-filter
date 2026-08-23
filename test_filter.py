@@ -161,6 +161,19 @@ class TestFindSearch(TempRepoTestCase):
         self.write("README.md", "x")
         self.assertEqual(flt.find_search(flt.ROOT, "*.js"), [])
 
+    def test_single_file_input_matching_pattern(self):
+        full = self.write("sub/app.js", "x")
+        self.assertEqual(flt.find_search(full, "*.js"), ["app.js"])
+
+    def test_single_file_input_not_matching_pattern(self):
+        full = self.write("sub/README.md", "x")
+        self.assertEqual(flt.find_search(full, "*.js"), [])
+
+    def test_single_file_input_ignore_case(self):
+        full = self.write("sub/README.md", "x")
+        self.assertEqual(flt.find_search(full, "readme*"), [])
+        self.assertEqual(flt.find_search(full, "readme*", ignore_case=True), ["README.md"])
+
 
 class TestProjectExcludes(TempRepoTestCase):
     def test_no_config_returns_empty_set(self):
@@ -809,6 +822,12 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--find", "*.js")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "src/app.js")
+
+    def test_find_input_single_file_is_matched(self):
+        self.write("sub/app.js", "x")
+        result = self.run_cli("--find", "*.js", "--input", "sub/app.js")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "app.js")
 
     def test_find_no_matches_prints_sentinel(self):
         self.write("README.md", "x")

@@ -36,7 +36,7 @@ default host with --host too.
 
 Prints the filtered content to stdout. Nothing else goes to stdout.
 
-Every run appends one line to usage.log (next to this script, gitignored):
+Every run appends one line to usage.json (next to this script, gitignored):
 a local-only, no-network JSON record of {mode, backend, chars_in, chars_out,
 tokens_saved_est} — no file contents, paths, or task text. Purely so you can
 eyeball how much this has saved over time; never blocks the command if the
@@ -57,7 +57,7 @@ EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__"
 MAX_GREP_MATCHES = 500
 LOG_PATH = os.environ.get(
     "LOCAL_CONTEXT_FILTER_LOG",
-    os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.log"),
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.json"),
 )
 
 DEFAULT_HOSTS = {

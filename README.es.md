@@ -158,7 +158,7 @@ preferencia explícita y consistente en vez de una decisión caso por caso.
 
 ## Log de uso (local, privado)
 
-Cada corrida agrega una línea a `usage.log` junto a `filter.py` —
+Cada corrida agrega una línea a `usage.json` junto a `filter.py` —
 gitignored, nunca sale de tu máquina. Cada entrada es solo conteos:
 `{ts, mode, backend, chars_in, chars_out, tokens_saved_est}` — sin
 contenido de archivos, rutas, ni el texto de `--task`. `tokens_saved_est`

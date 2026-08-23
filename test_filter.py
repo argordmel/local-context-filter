@@ -28,7 +28,7 @@ class TempRepoTestCase(unittest.TestCase):
         self._orig_root = flt.ROOT
         flt.ROOT = os.path.realpath(self.tmpdir)
         self._orig_log_path = flt.LOG_PATH
-        flt.LOG_PATH = os.path.join(self.tmpdir, "usage.log")
+        flt.LOG_PATH = os.path.join(self.tmpdir, "usage.json")
 
     def tearDown(self):
         os.chdir(self._orig_cwd)
@@ -140,7 +140,7 @@ class TestLogUsage(TempRepoTestCase):
         self.assertEqual(entry["tokens_saved_est"], 0)
 
     def test_write_failure_does_not_raise(self):
-        flt.LOG_PATH = os.path.join(self.tmpdir, "nonexistent-dir", "usage.log")
+        flt.LOG_PATH = os.path.join(self.tmpdir, "nonexistent-dir", "usage.json")
         flt.log_usage("ls", None, 10, 10)  # should not raise
 
 
@@ -428,7 +428,7 @@ class TestCLIEndToEnd(TempRepoTestCase):
     SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "filter.py")
 
     def run_cli(self, *args):
-        env = {**os.environ, "LOCAL_CONTEXT_FILTER_LOG": os.path.join(self.tmpdir, "usage.log")}
+        env = {**os.environ, "LOCAL_CONTEXT_FILTER_LOG": os.path.join(self.tmpdir, "usage.json")}
         return subprocess.run(
             [sys.executable, self.SCRIPT, *args], cwd=self.tmpdir, capture_output=True, text=True, env=env,
         )

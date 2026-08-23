@@ -153,7 +153,7 @@ preference explicit and consistent instead of judgment-call-by-judgment-call.
 
 ## Usage log (local, private)
 
-Every run appends one line to `usage.log` next to `filter.py` — gitignored,
+Every run appends one line to `usage.json` next to `filter.py` — gitignored,
 never leaves the machine. Each entry is just counts: `{ts, mode, backend,
 chars_in, chars_out, tokens_saved_est}` — no file contents, paths, or
 `--task` text. `tokens_saved_est` is a rough `chars/4` proxy for the real

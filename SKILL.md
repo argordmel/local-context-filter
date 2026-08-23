@@ -210,7 +210,7 @@ whether that text ever entered Claude's context. For exact-pattern search,
 
 ## Usage log (local, private)
 
-Every run appends one line to `usage.log` next to `filter.py` (gitignored,
+Every run appends one line to `usage.json` next to `filter.py` (gitignored,
 never leaves the machine): `{ts, mode, backend, chars_in, chars_out,
 tokens_saved_est}`. No file contents, paths, or `--task` text are recorded
 — only counts, so it's safe to leave on and cheap to `tail` or delete.

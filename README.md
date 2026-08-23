@@ -2,8 +2,7 @@
 
 *[Leer en español](README.es.md)*
 
-A [Claude Code](https://claude.com/claude-code) skill (`local-context-filter`) that
-offloads big/raw context to a **local** LLM before anything reaches Claude:
+A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter`) that offloads big/raw context to a **local** LLM before anything reaches Claude:
 
 - **`--grep`** — real recursive regex search (like `grep -rn`), rooted at the
   current directory, never escaping upward. No LLM involved, zero Claude

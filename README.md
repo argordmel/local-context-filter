@@ -21,6 +21,11 @@ A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter
 - **`--find`** — finds files/dirs by basename glob (like `find -iname`), no
   LLM, zero Claude tokens; use instead of `bash find` for locating a file
   by name.
+- **`--count`** — counts lines per file under `--input` (like `wc -l`), no
+  LLM, zero Claude tokens; use instead of `bash wc -l`.
+- **`--run`** — runs an `npm`/`npx`/`pnpm`/`yarn` command (only these four
+  binaries are allowed) and prints its output; raw (free) without
+  `--task`, or model-filtered down to real errors with it.
 - **`--report` / `--clean`** — read or wipe the local usage log
   (`usage.json`) that tracks estimated tokens saved over time.
 
@@ -134,6 +139,16 @@ python3 ~/.claude/skills/local-context-filter/filter.py --find "*.log"
 # same, case-insensitive
 python3 ~/.claude/skills/local-context-filter/filter.py --find "readme*" --ignore-case
 
+# count lines per file, no LLM, no Claude tokens
+python3 ~/.claude/skills/local-context-filter/filter.py --count --input filter.py
+python3 ~/.claude/skills/local-context-filter/filter.py --count
+
+# run an npm/npx/pnpm/yarn command, raw output, no LLM
+python3 ~/.claude/skills/local-context-filter/filter.py --run "npm install"
+
+# same, filtered by task
+python3 ~/.claude/skills/local-context-filter/filter.py --run "yarn install" --task "which errors are blocking install"
+
 # usage summary / wipe the local usage log
 python3 ~/.claude/skills/local-context-filter/filter.py --report
 python3 ~/.claude/skills/local-context-filter/filter.py --clean
@@ -182,6 +197,10 @@ For exact string/regex search in a project, prefer the `local-context-filter` sk
 For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
 
 Never run `bash ls`, `find`, or `tree` to explore a project's file/directory structure — always use the same skill's `--ls` mode to list a folder, or `--find` to locate a file by name. Both are free, zero Claude context tokens, same as `--grep`. This applies even to a simple one-off "list the files in X" request — don't reach for Bash out of habit.
+
+Never run `bash wc -l` to count lines in a file or directory — use the same skill's `--count` mode instead, same zero-token principle.
+
+For npm/npx/pnpm/yarn commands (install, etc.), prefer the same skill's `--run` mode over running them directly with Bash — raw output is free, and `--task` filters noisy install logs down to real errors through the local model.
 ```
 
 Without that instruction, Claude will still *discover* the skill via its
@@ -201,7 +220,7 @@ still succeeds — logging failures are silent and never block the command.
 
 ## Project-level excludes
 
-`--grep`, `--ls`, and `--find` skip `.git`, `node_modules`, `dist`,
+`--grep`, `--ls`, `--find`, and `--count` skip `.git`, `node_modules`, `dist`,
 `build`, `.venv`, `__pycache__`, `.next`, `coverage` by default. To skip
 more directories in one project without editing the skill, add
 `.claude/local-context-filter.json` at the project root:
@@ -216,9 +235,13 @@ more directories in one project without editing the skill, add
   subdirectories freely but can never resolve above the directory you ran
   the command from — `../`, absolute paths outside it, and symlinks
   pointing out are all rejected.
-- `--grep`, `--ls`, and `--find` auto-skip `.git`, `node_modules`, `dist`,
-  `build`, `.venv`, `__pycache__`, `.next`, `coverage` (plus any project
-  excludes above); `--grep` and `--find` also cap at 500 matches.
+- `--grep`, `--ls`, `--find`, and `--count` auto-skip `.git`, `node_modules`,
+  `dist`, `build`, `.venv`, `__pycache__`, `.next`, `coverage` (plus any
+  project excludes above); `--grep` and `--find` also cap at 500 matches.
+- `--run` only executes `npm`/`npx`/`pnpm`/`yarn` — any other binary is
+  rejected before it runs, and the command is tokenized (never passed to a
+  shell), so no shell injection via `--run`. It's still real code
+  execution (postinstall scripts, etc.), same as running it yourself.
 - The LLM-filter mode splits input over ~24k chars into sequential chunks
   and filters each separately (a stderr warning names the chunk count) —
   nothing is dropped, it just takes one LLM call per chunk instead of one
@@ -259,6 +282,11 @@ needs to be running to pass.
 | `--find` skips excluded dirs, custom excludes | `TestFindSearch.test_skips_excluded_dirs`, `test_custom_excluded_dirs` |
 | `--find` mutually exclusive with `--grep` | `TestCLIArgGating.test_find_and_grep_mutually_exclusive` |
 | Project excludes (`.claude/local-context-filter.json`) | `TestProjectExcludes` (all cases), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
+| `--count` single file, directory + `TOTAL`, empty dir sentinel | `TestCLIEndToEnd.test_count_single_file`, `test_count_directory_includes_total`, `test_count_empty_dir_prints_sentinel` |
+| `--count` mutually exclusive with `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |
+| `--run` rejects non-allowed binaries | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
+| `--run` executes allowed binary, prints output | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
+| `--run` mutually exclusive with `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
 | `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
 | `--clean` deletes usage.json, idempotent | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |

@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), or to find a file by name (glob, `--find`), all without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), to find a file by name (glob, `--find`), to count lines per file (`--count`), or to run an npm/npx/pnpm/yarn command (`--run`), all without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -27,6 +27,10 @@ compact result — that's what goes into Claude's context, not the raw blob.
   `bash ls`/`tree` so path exploration also costs zero Claude tokens
 - Finding a file by name (`--find`, see below) — use this instead of
   `bash find`/`find -iname` for the same reason
+- Counting lines in a file/directory (`--count`, see below) — use this
+  instead of `bash wc -l` for the same reason
+- Running an `npm`/`npx`/`pnpm`/`yarn` command and filtering noisy install
+  output down to real errors (`--run`, see below)
 
 **Don't use** the LLM-filter mode (`--task` without `--grep`) for content
 that's already small, or when you need the exact full content verbatim
@@ -195,9 +199,41 @@ nothing matches, caps at 500 like `--grep`. Add `--ignore-case` for
 case-insensitive matching, `--task` to have the local model narrow a large
 match list. Mutually exclusive with `--grep`/`--diff`/`--ls`.
 
+### Line counting (`--count`) — no LLM, no context cost
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --count --input filter.py
+python3 ~/.claude/skills/local-context-filter/filter.py --count
+```
+
+Counts lines per file, like `wc -l`. `--input` a single file prints one
+`N path` line; `--input` a directory (default: cwd) recurses, same
+confinement/exclusion rules as `--grep`/`--ls`/`--find`, and appends an
+`N TOTAL` line. No file content is included in the output, only counts.
+Prints `NO_ENTRIES` if the directory has no readable text files. Add
+`--task` to have the local model narrow a large listing down to what's
+relevant. Mutually exclusive with `--grep`/`--diff`/`--ls`/`--find`/`--run`.
+
+### Package manager commands (`--run`)
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --run "npm install"
+python3 ~/.claude/skills/local-context-filter/filter.py --run "pnpm install" --input packages/app
+python3 ~/.claude/skills/local-context-filter/filter.py --run "yarn install" --task "which errors are blocking install"
+```
+
+Runs an `npm`/`npx`/`pnpm`/`yarn` command — only these four binaries are
+allowed, anything else is rejected before it executes — at `--input`
+(default: cwd), same confinement rules as elsewhere. Prints combined
+stdout+stderr as-is, no LLM involved, same zero-context-cost principle as
+`--diff`. Add `--task` to have the local model filter a noisy install log
+down to the actual errors/warnings that matter. Prints `NO_OUTPUT` if the
+command produced nothing. 10-minute timeout. Mutually exclusive with
+`--grep`/`--diff`/`--ls`/`--find`/`--count`.
+
 ### Project-level excludes (`.claude/local-context-filter.json`)
 
-`--grep`, `--ls`, and `--find` skip `.git`, `node_modules`, `dist`,
+`--grep`, `--ls`, `--find`, and `--count` skip `.git`, `node_modules`, `dist`,
 `build`, `.venv`, `__pycache__`, `.next`, `coverage` by default. To skip
 more directories for one project without touching the skill itself, drop
 a JSON file at `<project root>/.claude/local-context-filter.json`:
@@ -234,6 +270,8 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--diff` | off | filter `git diff HEAD` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
 | `--ls` | off | recursively list files/dirs under `--input` (default: cwd); no-LLM without `--task` |
 | `--find` | — | glob pattern for basename search (like `find -iname`); no-LLM without `--task` |
+| `--count` | off | count lines per file under `--input` (like `wc -l`); no-LLM without `--task` |
+| `--run` | — | run an `npm`/`npx`/`pnpm`/`yarn` command; no-LLM without `--task` |
 | `--report` | off | print a usage.json summary (total runs, tokens saved by mode); cannot combine with anything else |
 | `--clean` | off | delete usage.json; cannot combine with anything else |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |

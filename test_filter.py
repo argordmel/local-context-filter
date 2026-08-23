@@ -721,6 +721,44 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--clean")
         self.assertEqual(result.stdout.strip(), "NO_USAGE_DATA")
 
+    def test_count_single_file(self):
+        self.write("a.txt", "l1\nl2\nl3\n")
+        result = self.run_cli("--count", "--input", "a.txt")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "3 a.txt")
+
+    def test_count_directory_includes_total(self):
+        self.write("a.txt", "l1\nl2\n")
+        self.write("sub/b.txt", "l1\n")
+        result = self.run_cli("--count")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("2 a.txt", result.stdout)
+        self.assertIn("1 sub/b.txt", result.stdout)
+        self.assertIn("3 TOTAL", result.stdout)
+
+    def test_count_empty_dir_prints_sentinel(self):
+        result = self.run_cli("--count")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_ENTRIES")
+
+    def test_run_rejects_non_allowed_binary(self):
+        result = self.run_cli("--run", "rm -rf /")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("only allows npm/npx/pnpm/yarn", result.stdout + result.stderr)
+
+    def test_run_npm_version_prints_output(self):
+        result = self.run_cli("--run", "npm --version")
+        self.assertEqual(result.returncode, 0)
+        self.assertRegex(result.stdout.strip(), r"^\d+\.\d+\.\d+$")
+
+    def test_run_and_grep_mutually_exclusive(self):
+        result = self.run_cli("--run", "npm --version", "--grep", "x")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_count_and_diff_mutually_exclusive(self):
+        result = self.run_cli("--count", "--diff")
+        self.assertNotEqual(result.returncode, 0)
+
 
 class TestReadDirectory(TempRepoTestCase):
     def test_reads_and_tags_files(self):

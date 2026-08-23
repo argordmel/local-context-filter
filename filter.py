@@ -8,6 +8,8 @@ Usage:
   python3 filter.py --diff [--input PATH] [--task "TASK"]
   python3 filter.py --ls [--input DIR] [--task "TASK"]
   python3 filter.py --find PATTERN [--input DIR] [--task "TASK"]
+  python3 filter.py --run "npm install" [--input DIR] [--task "TASK"]
+  python3 filter.py --count [--input FILE_OR_DIR] [--task "TASK"]
   python3 filter.py --report
 
 --input may be a file or a directory (searched recursively, subdirs included).
@@ -33,8 +35,19 @@ relevant.
 --find matches file/dir basenames against a glob pattern (like `find
 -iname`, e.g. "*.log") under --input, skipping the same excluded dirs — no
 LLM, no file contents read. Add --task to have the local model narrow a
-large match list down to what's relevant. --diff, --grep, --ls, and --find
-are all mutually exclusive with each other.
+large match list down to what's relevant.
+
+--run runs an npm/npx/pnpm/yarn command (only these four binaries are
+allowed) at --input (default: cwd) and prints combined stdout+stderr — no
+LLM involved. Add --task to have the local model filter noisy install
+output down to what's relevant (e.g. actual errors). --diff, --grep, --ls,
+--find, and --run are all mutually exclusive with each other.
+
+--count counts lines per file (like `wc -l`) under --input (default: cwd),
+skipping the same excluded dirs as --grep/--ls/--find — no LLM, no file
+content in the result, just "N path" per file plus a "N TOTAL" line. Add
+--task to have the local model narrow a large listing down to what's
+relevant.
 
 --report prints a summary of usage.json (total runs and estimated tokens
 saved, broken down by mode) — no LLM, cannot combine with anything else.
@@ -60,6 +73,7 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.request
@@ -69,6 +83,8 @@ from datetime import datetime, timezone
 ROOT = os.path.realpath(os.getcwd())
 EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__", ".next", "coverage"}
 MAX_GREP_MATCHES = 500
+ALLOWED_RUN_BINS = {"npm", "npx", "pnpm", "yarn"}
+RUN_TIMEOUT = 600
 LOG_PATH = os.environ.get(
     "LOCAL_CONTEXT_FILTER_LOG",
     os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.json"),
@@ -309,6 +325,47 @@ def log_usage(mode, backend, chars_in, chars_out):
         pass
 
 
+def count_lines(root, excluded_dirs=None):
+    """Count lines per file, like `wc -l`, no LLM, no file content in the result.
+
+    If root is a single file, returns one "N path" line. If root is a
+    directory, recurses (skipping excluded_dirs) and appends a "TOTAL N"
+    line, like `wc -l` on multiple files. Binary/unreadable files are
+    skipped silently.
+    """
+    excluded = EXCLUDED_DIRS if excluded_dirs is None else excluded_dirs
+
+    def line_count(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return sum(1 for _ in f)
+        except (UnicodeDecodeError, OSError):
+            return None
+
+    if os.path.isfile(root):
+        n = line_count(root)
+        if n is None:
+            sys.exit(f"error: '{root}' is not a readable text file")
+        return f"{n} {os.path.basename(root)}"
+
+    lines = []
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in excluded)
+        for name in sorted(filenames):
+            full = os.path.join(dirpath, name)
+            n = line_count(full)
+            if n is None:
+                continue
+            rel = os.path.relpath(full, root)
+            lines.append(f"{n} {rel}")
+            total += n
+    if not lines:
+        return None
+    lines.append(f"{total} TOTAL")
+    return "\n".join(lines)
+
+
 def list_tree(root, excluded_dirs=None):
     """Recursively list files and directories under root, skipping excluded_dirs
     (default: EXCLUDED_DIRS).
@@ -362,6 +419,36 @@ def get_git_diff(root, path=None):
     if result.returncode != 0:
         sys.exit(f"error: git diff failed: {result.stderr.strip()}")
     return result.stdout
+
+
+def run_package_command(root, command):
+    """Run an npm/npx/pnpm/yarn command at root, returning combined stdout+stderr.
+
+    Only npm/npx/pnpm/yarn are allowed as the binary — this is a filter tool,
+    not a general command runner, so anything else is rejected before exec.
+    Does not use shell=True; the command is tokenized with shlex.
+    """
+    try:
+        argv = shlex.split(command)
+    except ValueError as e:
+        sys.exit(f"error: could not parse --run command: {e}")
+    if not argv:
+        sys.exit("error: --run command is empty")
+    bin_name = os.path.basename(argv[0])
+    if bin_name not in ALLOWED_RUN_BINS:
+        sys.exit(f"error: --run only allows npm/npx/pnpm/yarn commands, got '{bin_name}'")
+    try:
+        result = subprocess.run(
+            argv, cwd=root, capture_output=True, text=True, timeout=RUN_TIMEOUT,
+        )
+    except FileNotFoundError:
+        sys.exit(f"error: '{bin_name}' not found on PATH")
+    except subprocess.TimeoutExpired:
+        sys.exit(f"error: --run command timed out after {RUN_TIMEOUT}s")
+    output = result.stdout + result.stderr
+    if result.returncode != 0:
+        output += f"\n[exit code {result.returncode}]"
+    return output
 
 
 MAX_CONTENT_CHARS = 24000  # ~6k tokens; keeps prompt+content under num_ctx below with room for output
@@ -459,6 +546,8 @@ def main():
     ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd (or --input path); no LLM without --task")
     ap.add_argument("--ls", action="store_true", help="recursively list files/dirs under --input (default: cwd), no LLM without --task")
     ap.add_argument("--find", metavar="PATTERN", help="find files/dirs by basename glob (like `find -iname`) under --input, no LLM")
+    ap.add_argument("--run", metavar="COMMAND", help="run an npm/npx/pnpm/yarn command (e.g. 'npm install') at --input (default: cwd) and print its output; no LLM without --task")
+    ap.add_argument("--count", action="store_true", help="count lines per file under --input (default: cwd), like `wc -l`; no LLM without --task")
     ap.add_argument("--report", action="store_true", help="print a summary of usage.json (local totals); cannot combine with anything else")
     ap.add_argument("--clean", action="store_true", help="delete usage.json; cannot combine with anything else")
     ap.add_argument("--backend", choices=["ollama", "lmstudio", "openai"], default="ollama", help="local LLM server (default: ollama)")
@@ -467,9 +556,9 @@ def main():
     ap.add_argument("--max-words", type=int, default=300, help="target max words of output (default: 300)")
     args = ap.parse_args()
 
-    other_modes = args.diff or bool(args.grep) or args.ls or bool(args.find) or bool(args.task)
+    other_modes = args.diff or bool(args.grep) or args.ls or bool(args.find) or bool(args.run) or args.count or bool(args.task)
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--grep/--ls/--find/--task")
+        ap.error("--report cannot be combined with --diff/--grep/--ls/--find/--run/--count/--task")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:
@@ -485,8 +574,8 @@ def main():
         print("USAGE_LOG_CLEARED" if existed else "NO_USAGE_DATA")
         return
 
-    if sum([args.diff, bool(args.grep), args.ls, bool(args.find)]) > 1:
-        ap.error("--diff, --grep, --ls, and --find are mutually exclusive")
+    if sum([args.diff, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count]) > 1:
+        ap.error("--diff, --grep, --ls, --find, --run, and --count are mutually exclusive")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
@@ -543,6 +632,40 @@ def main():
         result = call_llm_chunked(args.backend, host, model, args.task, diff, args.max_words)
         print(result)
         log_usage("diff", args.backend, len(diff), len(result))
+        return
+
+    if args.count:
+        root = confine_to_root(args.input) if args.input else ROOT
+        counted = count_lines(root, excluded_dirs=excluded_dirs)
+        if counted is None:
+            print("NO_ENTRIES")
+            log_usage("count", None, 0, 0)
+            return
+        if not args.task:
+            print(counted)
+            log_usage("count", None, len(counted), len(counted))
+            return
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm_chunked(args.backend, host, model, args.task, counted, args.max_words)
+        print(result)
+        log_usage("count", args.backend, len(counted), len(result))
+        return
+
+    if args.run:
+        root = confine_to_root(args.input) if args.input else ROOT
+        output = run_package_command(root, args.run)
+        if not output.strip():
+            print("NO_OUTPUT")
+            log_usage("run", None, 0, 0)
+            return
+        if not args.task:
+            print(output, end="" if output.endswith("\n") else "\n")
+            log_usage("run", None, len(output), len(output))
+            return
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm_chunked(args.backend, host, model, args.task, output, args.max_words)
+        print(result)
+        log_usage("run", args.backend, len(output), len(result))
         return
 
     if args.grep:

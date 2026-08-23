@@ -27,6 +27,18 @@ that's already small, or when you need the exact full content verbatim
 logs/docs, riskier for code you'll edit). For exact-match search use
 `--grep` instead, not `--task`.
 
+## Fallback when no backend is reachable
+
+If `--task` (LLM-filter) mode errors with `error: ollama not reachable...`
+or `error: lmstudio not reachable...`, don't retry the same command or try
+the other `--backend` blind — neither is confirmed running. Fall back
+immediately to reading the file(s)/directory directly with built-in
+Read/Grep tools instead, and tell the user in one line that no local model
+was available so this ran through Claude's own context.
+
+`--grep` mode never needs this — it doesn't touch either backend, so it
+keeps working regardless of whether Ollama or LM Studio is running.
+
 ## Requirements
 
 Pick one backend — both aren't meant to run at once (RAM):

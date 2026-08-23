@@ -145,6 +145,28 @@ python3 ~/.claude/skills/local-context-filter/filter.py --clean
 
 Referencia completa de flags y comportamiento: [SKILL.md](SKILL.md).
 
+## Alias de shell (recomendado)
+
+Escribir la ruta completa `python3 ~/.claude/skills/local-context-filter/filter.py`
+cada vez es tedioso para comandos sueltos rápidos como `--report`/`--clean`.
+Agregá un alias a tu shell rc (`~/.zshrc`, `~/.bashrc`):
+
+```bash
+alias skill-local-context='python3 ~/.claude/skills/local-context-filter/filter.py'
+```
+
+Recargá el shell (`source ~/.zshrc`) y usalo directo:
+
+```bash
+skill-local-context --report
+skill-local-context --clean
+skill-local-context --grep "TODO" --input app
+```
+
+Esto es comodidad para vos corriendo comandos a mano — Claude igual
+invoca `filter.py` por su ruta completa sin importar los alias de tu
+shell, porque no carga tus archivos rc de shell interactivo.
+
 ## Activarla por defecto
 
 Las skills en `~/.claude/skills/` son **globales** — disponibles en todo

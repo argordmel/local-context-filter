@@ -15,6 +15,9 @@ A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter
   model narrow a noisy match list down to what's relevant.
 - **`--diff`** — filters `git diff HEAD` at cwd (or scoped to `--input`);
   raw diff (free) without `--task`, or model-filtered with it.
+- **`--ls`** — recursively lists files/dirs under `--input` (default: cwd),
+  no LLM, zero Claude tokens; use instead of `bash ls`/`find` for exploring
+  project structure.
 
 Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
 or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
@@ -113,6 +116,12 @@ python3 ~/.claude/skills/local-context-filter/filter.py --diff --input README.md
 
 # same, filtered by task
 python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
+
+# recursive directory listing, no LLM, no Claude tokens
+python3 ~/.claude/skills/local-context-filter/filter.py --ls
+
+# same, scoped to a subfolder
+python3 ~/.claude/skills/local-context-filter/filter.py --ls --input app/config
 ```
 
 Full flag reference and behavior notes: [SKILL.md](SKILL.md).
@@ -134,6 +143,8 @@ project) or a project's own `CLAUDE.md`:
 For exact string/regex search in a project, prefer the `local-context-filter` skill's `--grep` mode over reading files directly or built-in grep tools — it costs zero Claude context tokens. Only fall back to reading files when full file content/formatting is needed, not just matching lines.
 
 For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
+
+For exploring a project's file/directory structure (finding a file by name, listing a folder), prefer the same skill's `--ls` mode over `bash ls`/`find`/`tree` — it's free too and never puts the listing through Claude's context beyond the final printed result.
 ```
 
 Without that instruction, Claude will still *discover* the skill via its
@@ -146,8 +157,9 @@ preference explicit and consistent instead of judgment-call-by-judgment-call.
   subdirectories freely but can never resolve above the directory you ran
   the command from — `../`, absolute paths outside it, and symlinks
   pointing out are all rejected.
-- `--grep` auto-skips `.git`, `node_modules`, `dist`, `build`, `.venv`,
-  `__pycache__`, `.next`, `coverage`, and caps at 500 matches.
+- `--grep` and `--ls` auto-skip `.git`, `node_modules`, `dist`, `build`,
+  `.venv`, `__pycache__`, `.next`, `coverage`; `--grep` also caps at 500
+  matches.
 - The LLM-filter mode truncates input over ~24k chars (with a stderr
   warning) to stay inside the model's context window — split large
   directory scans into smaller runs instead of one pass over everything.
@@ -177,6 +189,11 @@ needs to be running to pass.
 | `--diff` clean tree → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
 | `--diff` outside a git repo → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
 | `--diff` + `--grep` mutually exclusive | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
+| `--ls` lists files/dirs, skips excluded dirs | `TestListTree.test_lists_files_and_dirs`, `TestListTree.test_skips_excluded_dirs`, `TestCLIEndToEnd.test_ls_prints_entries` |
+| `--ls` empty dir → `NO_ENTRIES` | `TestListTree.test_empty_dir_returns_empty_list`, `TestCLIEndToEnd.test_ls_empty_dir_prints_sentinel` |
+| `--ls` scoped to `--input` | `TestCLIEndToEnd.test_ls_scoped_to_input` |
+| `--ls` non-directory `--input` → error | `TestListTree.test_non_directory_exits` |
+| `--ls` mutually exclusive with `--grep`/`--diff` | `TestCLIEndToEnd.test_ls_and_grep_mutually_exclusive`, `test_ls_and_diff_mutually_exclusive` |
 | Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |
 | `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
@@ -197,6 +214,8 @@ needs to be running to pass.
 - [x] Support other local runtimes generically (llama.cpp server, vLLM, any
       OpenAI-compatible `/v1/chat/completions` endpoint) via `--backend openai`
       + `--host`.
+- [x] Support directory listing (`--ls`, `ls`/`find`-style) at zero Claude
+      token cost.
 
 ## License
 

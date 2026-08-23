@@ -6,6 +6,7 @@ Usage:
   cat file | python3 filter.py --task "TASK"
   python3 filter.py --grep PATTERN [--input DIR] [--task "TASK"]
   python3 filter.py --diff [--input PATH] [--task "TASK"]
+  python3 filter.py --ls [--input DIR] [--task "TASK"]
 
 --input may be a file or a directory (searched recursively, subdirs included).
 Paths are confined to the current working directory: parent traversal (../,
@@ -20,7 +21,12 @@ match list down to what's relevant to that task.
 --diff runs `git diff HEAD` (staged + unstaged) at cwd, or scoped to
 --input (a single file or directory) if given, and prints it as-is — no
 LLM involved. Add --task to have the local model filter it down to what's
-relevant to that task instead. Cannot combine with --grep.
+relevant to that task instead.
+
+--ls recursively lists files and directories under --input (default: cwd),
+skipping the same excluded dirs as --grep — no LLM, no file contents read.
+Add --task to have the local model narrow a large listing down to what's
+relevant. --diff, --grep, and --ls are mutually exclusive.
 
 --backend selects the local server: "ollama" (default, http://localhost:11434),
 "lmstudio" (OpenAI-compatible, http://localhost:1234), or "openai" (any other
@@ -153,6 +159,24 @@ def grep_search(root, pattern, ignore_case=False):
     return matches
 
 
+def list_tree(root):
+    """Recursively list files and directories under root, skipping EXCLUDED_DIRS.
+
+    Directories are suffixed with '/'. No LLM involved, no file contents read.
+    """
+    if not os.path.isdir(root):
+        sys.exit(f"error: '{root}' is not a directory")
+    entries = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDED_DIRS)
+        rel_dir = os.path.relpath(dirpath, root)
+        if rel_dir != ".":
+            entries.append(rel_dir + "/")
+        for name in sorted(filenames):
+            entries.append(os.path.relpath(os.path.join(dirpath, name), root))
+    return sorted(entries)
+
+
 def read_directory(root):
     """Recursively read all files under root (subdirs included), each tagged by relative path."""
     chunks = []
@@ -260,18 +284,33 @@ def main():
     ap.add_argument("--grep", metavar="PATTERN", help="exact regex search (like grep -rn) under --input, no LLM")
     ap.add_argument("--ignore-case", action="store_true", help="case-insensitive --grep")
     ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd (or --input path); no LLM without --task")
+    ap.add_argument("--ls", action="store_true", help="recursively list files/dirs under --input (default: cwd), no LLM without --task")
     ap.add_argument("--backend", choices=["ollama", "lmstudio", "openai"], default="ollama", help="local LLM server (default: ollama)")
     ap.add_argument("--host", help="override backend host (default: ollama=http://localhost:11434, lmstudio=http://localhost:1234; required for --backend openai)")
     ap.add_argument("--model", help="model tag/id; default: qwen2.5:7b on ollama, first available model on lmstudio/openai")
     ap.add_argument("--max-words", type=int, default=300, help="target max words of output (default: 300)")
     args = ap.parse_args()
+    if sum([args.diff, bool(args.grep), args.ls]) > 1:
+        ap.error("--diff, --grep, and --ls are mutually exclusive")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
 
+    if args.ls:
+        root = confine_to_root(args.input) if args.input else ROOT
+        entries = list_tree(root)
+        if not entries:
+            print("NO_ENTRIES")
+            return
+        if not args.task:
+            print("\n".join(entries))
+            return
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm(args.backend, host, model, args.task, "\n".join(entries), args.max_words)
+        print(result)
+        return
+
     if args.diff:
-        if args.grep:
-            ap.error("--diff cannot be combined with --grep")
         diff_path = confine_to_root(args.input) if args.input else None
         diff = get_git_diff(ROOT, diff_path)
         if not diff.strip():
@@ -308,4 +347,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BrokenPipeError:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(0)

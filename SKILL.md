@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project, or to list a project's file/directory tree (ls/find-style), without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -23,6 +23,9 @@ compact result — that's what goes into Claude's context, not the raw blob.
   cheaper and more precise than the LLM-filter mode for this
 - Reviewing/summarizing the current working tree changes (`--diff`, see
   below) without pasting a large `git diff` into the conversation
+- Listing a directory tree / finding a file by name (`--ls`, see below) —
+  use this instead of `bash ls`/`find` so path exploration also costs zero
+  Claude tokens
 
 **Don't use** the LLM-filter mode (`--task` without `--grep`) for content
 that's already small, or when you need the exact full content verbatim
@@ -155,6 +158,27 @@ model filter the diff down to what's relevant. Prints `NO_CHANGES` if the
 diff is empty, exits with an error if cwd isn't a git repo. Cannot combine
 with `--grep`.
 
+### Directory listing (`--ls`) — no LLM, no context cost
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --ls
+python3 ~/.claude/skills/local-context-filter/filter.py --ls --input app/config
+```
+
+Recursively lists files and directories rooted at `--input` (default: cwd),
+same confinement and exclusion rules as `--grep`. Directories print with a
+trailing `/`. Prints `NO_ENTRIES` if the directory is empty. Use this
+instead of `bash ls`/`find`/`bash tree` for exploring project structure or
+locating a file by name — same zero-Claude-token principle as `--grep`.
+Cannot combine with `--grep` or `--diff`.
+
+Add `--task` to have the local model narrow a large listing down to what's
+relevant:
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --ls --input app --task "which files look auth-related"
+```
+
 ### Real cost example
 
 Measured on a mid-size project, searching for `ServiceOrder` under `app/`
@@ -178,6 +202,7 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
 | `--diff` | off | filter `git diff HEAD` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
+| `--ls` | off | recursively list files/dirs under `--input` (default: cwd); no-LLM without `--task` |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |
 | `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`); **required** for `--backend openai` |
 | `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |

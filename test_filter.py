@@ -110,6 +110,32 @@ class TestGrepSearch(TempRepoTestCase):
         self.assertEqual(matches, [])
 
 
+class TestListTree(TempRepoTestCase):
+    def test_lists_files_and_dirs(self):
+        self.write("a.txt", "hi")
+        self.write("sub/b.txt", "hi")
+        entries = flt.list_tree(flt.ROOT)
+        self.assertIn("a.txt", entries)
+        self.assertIn("sub/", entries)
+        self.assertIn("sub/b.txt", entries)
+
+    def test_skips_excluded_dirs(self):
+        self.write("node_modules/lib.js", "x")
+        self.write("app/a.js", "x")
+        entries = flt.list_tree(flt.ROOT)
+        self.assertTrue(all("node_modules" not in e for e in entries))
+        self.assertIn("app/a.js", entries)
+
+    def test_empty_dir_returns_empty_list(self):
+        os.makedirs(os.path.join(self.tmpdir, "empty"))
+        self.assertEqual(flt.list_tree(os.path.join(self.tmpdir, "empty")), [])
+
+    def test_non_directory_exits(self):
+        self.write("a.txt", "hi")
+        with self.assertRaises(SystemExit):
+            flt.list_tree(os.path.join(self.tmpdir, "a.txt"))
+
+
 class TestGitDiff(TempRepoTestCase):
     def _init_repo(self):
         subprocess.run(["git", "init", "-q"], cwd=self.tmpdir, check=True)
@@ -325,7 +351,23 @@ class TestCLIArgGating(unittest.TestCase):
             capture_output=True, text=True,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--diff cannot be combined", result.stderr)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_ls_and_grep_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--ls", "--grep", "x"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_ls_and_diff_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--ls", "--diff"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
 
 
 class TestReadInput(TempRepoTestCase):
@@ -409,6 +451,27 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--diff")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error:", result.stdout + result.stderr)
+
+    def test_ls_prints_entries(self):
+        self.write("a.txt", "hi")
+        self.write("sub/b.txt", "hi")
+        result = self.run_cli("--ls")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("a.txt", result.stdout)
+        self.assertIn("sub/", result.stdout)
+
+    def test_ls_empty_dir_prints_sentinel(self):
+        result = self.run_cli("--ls")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_ENTRIES")
+
+    def test_ls_scoped_to_input(self):
+        self.write("a.txt", "hi")
+        self.write("sub/b.txt", "hi")
+        result = self.run_cli("--ls", "--input", "sub")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("b.txt", result.stdout)
+        self.assertNotIn("a.txt", result.stdout)
 
 
 class TestReadDirectory(TempRepoTestCase):

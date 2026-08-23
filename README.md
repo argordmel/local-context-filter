@@ -306,6 +306,7 @@ needs to be running to pass.
 | `--grep --input` scoped to a single file | `TestGrepSearch.test_single_file_input_is_searched`, `test_single_file_input_no_matches`, `TestCLIEndToEnd.test_grep_input_single_file_is_searched` |
 | `--diff` whole repo, raw | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
 | `--diff --input` scoped to one path | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
+| `--diff` with root as a single file (external absolute/`~` `--input`) doesn't crash on cwd | `TestGitDiff.test_file_as_root_uses_parent_dir_as_cwd`, `TestCLIEndToEnd.test_diff_absolute_single_file_input_under_home_works_without_cd` |
 | `--diff` clean tree → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
 | `--diff` outside a git repo → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
 | `--diff` outside a git repo → clean short error, not git's `--no-index` usage dump | `TestCLIEndToEnd.test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump`, `test_diff_input_not_a_git_repo_errors_cleanly` |

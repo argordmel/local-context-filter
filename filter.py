@@ -596,10 +596,16 @@ def get_git_diff(root, path=None):
 
     If path is given, scopes the diff to that file/directory (must already
     be confined to root by the caller).
+
+    root itself may be a single file (an absolute/~ --input can widen
+    CONFINE_ROOT straight to a file) — git needs a directory as cwd, so
+    that case runs from root's parent directory instead; path's pathspec
+    is still computed relative to that same parent, so scoping is unaffected.
     """
+    git_cwd = root if os.path.isdir(root) else os.path.dirname(root)
     try:
         check = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"], cwd=root, capture_output=True, text=True, timeout=10,
+            ["git", "rev-parse", "--is-inside-work-tree"], cwd=git_cwd, capture_output=True, text=True, timeout=10,
         )
     except FileNotFoundError:
         sys.exit("error: git not found on PATH")
@@ -610,8 +616,8 @@ def get_git_diff(root, path=None):
 
     cmd = ["git", "diff", "HEAD"]
     if path:
-        cmd += ["--", os.path.relpath(path, root)]
-    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=30)
+        cmd += ["--", os.path.relpath(path, git_cwd)]
+    result = subprocess.run(cmd, cwd=git_cwd, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         sys.exit(f"error: git diff failed: {result.stderr.strip()}")
     return result.stdout

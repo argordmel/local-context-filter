@@ -316,6 +316,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--grep --input` acotado a un archivo único | `TestGrepSearch.test_single_file_input_is_searched`, `test_single_file_input_no_matches`, `TestCLIEndToEnd.test_grep_input_single_file_is_searched` |
 | `--diff` repo completo, crudo | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
 | `--diff --input` acotado a una ruta | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
+| `--diff` con raíz como archivo único (`--input` absoluto/`~` externo) no crashea por cwd | `TestGitDiff.test_file_as_root_uses_parent_dir_as_cwd`, `TestCLIEndToEnd.test_diff_absolute_single_file_input_under_home_works_without_cd` |
 | `--diff` árbol limpio → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
 | `--diff` fuera de un repo git → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
 | `--diff` fuera de un repo git → error corto y limpio, no el volcado de ayuda `--no-index` de git | `TestCLIEndToEnd.test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump`, `test_diff_input_not_a_git_repo_errors_cleanly` |

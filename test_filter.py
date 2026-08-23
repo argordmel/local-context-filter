@@ -464,6 +464,18 @@ class TestGitDiff(TempRepoTestCase):
         self.assertIn("a.txt", diff)
         self.assertNotIn("b.txt", diff)
 
+    def test_file_as_root_uses_parent_dir_as_cwd(self):
+        """root can be a single file when CONFINE_ROOT was widened straight
+        to an absolute/~ --input file (see set_confine_root) — git needs a
+        directory as cwd, so this must not crash with NotADirectoryError.
+        """
+        self._init_repo()
+        self.write("a.txt", "line1\nline2\n")
+        file_root = os.path.join(self.tmpdir, "a.txt")
+        diff = flt.get_git_diff(file_root, file_root)
+        self.assertIn("a.txt", diff)
+        self.assertIn("line2", diff)
+
 
 class TestRunPackageCommand(TempRepoTestCase):
     def test_non_executable_binary_on_path_errors_cleanly(self):
@@ -968,6 +980,26 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--grep", "x", "--input", "/etc")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be inside your home directory", result.stdout + result.stderr)
+
+    def test_diff_absolute_single_file_input_under_home_works_without_cd(self):
+        target = os.path.join(flt.HOME, ".local-context-filter-test-e2e-diff")
+        os.makedirs(target, exist_ok=True)
+        try:
+            subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=target, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=target, check=True)
+            with open(os.path.join(target, "a.txt"), "w") as f:
+                f.write("line1\n")
+            subprocess.run(["git", "add", "a.txt"], cwd=target, check=True)
+            subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=target, check=True)
+            with open(os.path.join(target, "a.txt"), "a") as f:
+                f.write("line2\n")
+            result = self.run_cli("--diff", "--input", os.path.join(target, "a.txt"))
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("line2", result.stdout)
+            self.assertNotIn("Traceback", result.stdout + result.stderr)
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
 
     def test_grep_no_matches_prints_sentinel(self):
         self.write("a.js", "nothing here\n")

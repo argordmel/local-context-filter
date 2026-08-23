@@ -161,6 +161,20 @@ the local model to narrow the match list down to what's relevant:
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "which TODOs are about auth"
 ```
 
+**Trust, but verify: `--grep --task` prints two extra signals after the
+model's answer.** A `Confidence: high|medium|low — <reason>` line is the
+model's own self-assessment — useful, but not fully trustworthy on its
+own (local models have been observed claiming "high" while dropping a
+directly relevant file). A `coverage: N/M source files referenced in this
+summary (missing: ...)` line is computed by the script itself, not the
+model — it's an objective count of how many distinct files from the raw
+grep matches actually got mentioned in the filtered output. When coverage
+is incomplete, don't take the summary at face value: re-run `--grep`
+without `--task` (or read the missing files directly) before treating the
+answer as settled, especially for anything beyond straightforward search/
+navigation/diff-summary use — for real architecture decisions, look at
+the evidence yourself rather than trusting a local model's synthesis of it.
+
 ### Working-tree diff (`--diff`)
 
 ```bash

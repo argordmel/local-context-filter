@@ -111,7 +111,11 @@ SYSTEM_PROMPT = (
     "Output ONLY the information from RAW_CONTENT that is relevant to TASK. "
     "Be concise and factual. Preserve exact code, numbers, names, and errors verbatim. "
     "Discard anything irrelevant to TASK. Do not add commentary, opinions, or explain what you did. "
-    "If nothing is relevant, output exactly: NO_RELEVANT_CONTENT."
+    "If nothing is relevant, output exactly: NO_RELEVANT_CONTENT — nothing else, no Confidence line. "
+    "Otherwise, end your output with a line 'Confidence: high|medium|low — <one-line reason>'. "
+    "Only claim high if RAW_CONTENT gave direct, complete evidence for TASK — not an inference or a guess. "
+    "Use medium if you found partial or indirect evidence, and low if you're mostly guessing or RAW_CONTENT "
+    "barely touches TASK. Do not default to high; most real answers from a fragment of a codebase are medium at best."
 )
 
 
@@ -731,6 +735,28 @@ def call_llm(backend, host, model, task, content, max_words):
         sys.exit(f"error: {backend} at {url} returned an unexpected response shape: {json.dumps(data)[:300]}")
 
 
+def compute_file_coverage(matches, output):
+    """Given --grep matches ("path:line: content" strings) and the local
+    model's filtered output, return (covered, total, missing) — how many of
+    the distinct source files from matches are actually mentioned in output.
+
+    This is a mechanical, independent check: the model's own self-reported
+    Confidence line can be (and in testing has been) overconfident, so
+    Claude gets an objective signal of possible dropped evidence alongside
+    it, not just the model's word for it.
+    """
+    files = []
+    seen = set()
+    for m in matches:
+        path = m.split(":", 1)[0]
+        if path not in seen:
+            seen.add(path)
+            files.append(path)
+    missing = [f for f in files if f not in output]
+    covered = len(files) - len(missing)
+    return covered, len(files), missing
+
+
 def call_llm_chunked(backend, host, model, task, content, max_words):
     """Like call_llm, but content over MAX_CONTENT_CHARS is split into sequential
     chunks and each is filtered separately instead of silently truncated — full
@@ -915,6 +941,12 @@ def main():
         model = resolve_model(args.backend, host, args.model)
         result = call_llm_chunked(args.backend, host, model, args.task, joined, args.max_words)
         print(result)
+        if result != "NO_RELEVANT_CONTENT":
+            covered, total, missing = compute_file_coverage(matches, result)
+            coverage_line = f"coverage: {covered}/{total} source files referenced in this summary"
+            if missing:
+                coverage_line += f" (missing: {', '.join(missing)})"
+            print(coverage_line)
         log_usage("grep", args.backend, chars_scanned, len(result))
         return
 

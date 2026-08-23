@@ -722,7 +722,7 @@ class TestCallLLM(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
             with mock.patch("sys.stderr", new_callable=io.StringIO):
                 flt.call_llm("ollama", "http://x", "qwen2.5:7b", "task", big, 100)
-        self.assertLessEqual(len(captured["body"]["prompt"]), flt.MAX_CONTENT_CHARS + 500)
+        self.assertLessEqual(len(captured["body"]["prompt"]), flt.MAX_CONTENT_CHARS + len(flt.SYSTEM_PROMPT) + 500)
 
     def test_http_error_surfaces_response_body_message(self):
         def raise_http_error(req, timeout=120):
@@ -753,6 +753,31 @@ class TestCallLLM(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.call_llm("ollama", "http://x", "qwen2.5:7b", "task", "content", 100)
         self.assertIn("isn't valid JSON", str(ctx.exception))
+
+
+class TestComputeFileCoverage(unittest.TestCase):
+    def test_all_files_referenced_full_coverage(self):
+        matches = ["a.js:1: x", "b.js:2: y"]
+        output = "Findings in a.js and b.js show the login flow."
+        covered, total, missing = flt.compute_file_coverage(matches, output)
+        self.assertEqual((covered, total, missing), (2, 2, []))
+
+    def test_missing_file_flagged(self):
+        matches = ["controllers/Auth.js:4: x", "models/Auth.js:12: y"]
+        output = "Only controllers/Auth.js is discussed here."
+        covered, total, missing = flt.compute_file_coverage(matches, output)
+        self.assertEqual((covered, total), (1, 2))
+        self.assertEqual(missing, ["models/Auth.js"])
+
+    def test_duplicate_file_across_matches_counted_once(self):
+        matches = ["a.js:1: x", "a.js:5: y", "a.js:9: z"]
+        output = "a.js has three matches."
+        covered, total, missing = flt.compute_file_coverage(matches, output)
+        self.assertEqual((covered, total, missing), (1, 1, []))
+
+    def test_no_matches_is_zero_of_zero(self):
+        covered, total, missing = flt.compute_file_coverage([], "anything")
+        self.assertEqual((covered, total, missing), (0, 0, []))
 
 
 class TestCallLLMChunked(unittest.TestCase):

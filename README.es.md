@@ -3,7 +3,13 @@
 *[Read in English](README.md)*
 
 Una skill para [Claude Code](https://claude.com/claude-code) (`local-context-filter`) que
-delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
+delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude.
+
+Pensala como darle a Claude un "explorador" local: en vez de volcar miles de líneas de resultados de grep, un directorio entero, o un log ruidoso a la conversación, un modelo local (o Python plano para búsqueda exacta) hace el trabajo pesado y devuelve solo lo relevante. Claude igual puede abrir y validar los archivos reales cuando la precisión importa — no se le pide confiar ciegamente en la síntesis local.
+
+Brilla para **búsqueda, orientación y resúmenes de diff** — encontrar cosas, mapear un codebase, ver qué cambió. Se usa menos en decisiones complejas de arquitectura, donde Claude necesita ver la evidencia real directo, no una versión filtrada de ella.
+
+Modos:
 
 - **`--grep`** — búsqueda regex recursiva real (como `grep -rn`), con raíz en
   el directorio actual, sin escapar hacia arriba. Sin LLM, cero tokens de
@@ -13,7 +19,10 @@ delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
   modelo local con una descripción de tarea; el modelo elimina todo lo
   irrelevante y solo el resultado compacto entra al contexto de Claude.
 - **`--grep` + `--task`** — grep primero (exacto, gratis), y luego el modelo
-  local reduce una lista de coincidencias ruidosa a lo relevante.
+  local reduce una lista de coincidencias ruidosa a lo relevante. Imprime
+  una línea `Confidence:` autoreportada más una línea `coverage:` calculada
+  por el script (cuántos de los archivos con match terminaron en el
+  resumen) — ver [Confiar en el resumen](#confiar-en-el-resumen).
 - **`--diff`** — filtra `git diff HEAD` en el directorio actual (o acotado
   a `--input`); diff crudo (gratis) sin `--task`, o filtrado por el modelo
   con `--task`.
@@ -261,6 +270,30 @@ saltar más directorios en un proyecto sin tocar la skill, agregá
 {"exclude": ["fixtures", "vendor"]}
 ```
 
+## Confiar en el resumen
+
+`--grep --task` no solo imprime la respuesta del modelo local — también
+imprime dos señales pensadas para detectar cuando se equivoca:
+
+- **`Confidence: high|medium|low — <razón>`**, la autoevaluación del
+  modelo. Útil, pero no la tomes al pie de la letra: en pruebas, un
+  modelo local reportó "high" en un resumen que se había perdido en
+  silencio un archivo fuente directamente relevante.
+- **`coverage: N/M source files referenced in this summary (missing:
+  ...)`**, calculado por el propio script — un conteo objetivo de cuántos
+  archivos distintos de los matches crudos de `--grep` terminaron
+  mencionados en la salida del modelo. No se le puede "convencer" de estar
+  equivocado como sí a la confianza autoreportada del modelo.
+
+Cuando la cobertura queda incompleta, no trates el resumen como
+definitivo — corré `--grep` de nuevo sin `--task` (gratis, exacto) o leé
+los archivos faltantes directo antes de actuar sobre eso. Justo por esto
+la skill es más fuerte para **búsqueda, orientación y resúmenes de
+diff**: Claude siempre puede volver a abrir los archivos reales. Confiá
+menos en ella para decisiones complejas de arquitectura, donde el modelo
+principal debería ver la evidencia directa en vez de una síntesis del
+modelo local.
+
 ## Seguridad
 
 - Confinamiento de rutas: un `--input` **relativo** (y la raíz de búsqueda
@@ -314,6 +347,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Funcionalidad | Test(s) |
 |---|---|
 | `--grep` búsqueda exacta, números de línea | `TestGrepSearch.test_finds_matches_with_line_numbers`, `TestCLIEndToEnd.test_grep_prints_matches` |
+| Cálculo de cobertura de archivos (completa, faltante, dedup archivo duplicado, vacío) | `TestComputeFileCoverage` (todos los casos) |
 | `--grep --ignore-case` | `TestGrepSearch.test_case_insensitive`, `TestCLIEndToEnd.test_grep_ignore_case_flag` |
 | `--grep` sin coincidencias → `NO_MATCHES` | `TestGrepSearch.test_no_matches_returns_empty_list`, `TestCLIEndToEnd.test_grep_no_matches_prints_sentinel` |
 | `--grep`/`--find`/`--count` con `--input` inexistente → error, distinto de vacío/sin coincidencias | `TestCLIEndToEnd.test_grep_nonexistent_input_errors_distinctly_from_no_matches`, `test_find_nonexistent_input_errors_distinctly_from_no_matches`, `test_count_nonexistent_input_errors_distinctly_from_empty` |

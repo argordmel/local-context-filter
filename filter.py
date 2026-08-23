@@ -715,7 +715,10 @@ def call_llm(backend, host, model, task, content, max_words):
 
     if backend == "ollama":
         return data.get("response", "").strip()
-    return data["choices"][0]["message"]["content"].strip()
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError):
+        sys.exit(f"error: {backend} at {url} returned an unexpected response shape: {json.dumps(data)[:300]}")
 
 
 def call_llm_chunked(backend, host, model, task, content, max_words):

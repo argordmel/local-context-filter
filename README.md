@@ -353,6 +353,7 @@ needs to be running to pass.
 | Backend unreachable → clear per-backend error | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
 | Malformed `--host` URL / malformed JSON response → clean error, not a traceback | `TestListModels.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback`, `TestCallLLM.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback` |
 | HTTP error surfaces server's response body | `TestCallLLM.test_http_error_surfaces_response_body_message` |
+| Valid JSON with unexpected shape (missing choices/message/content) → clean error, not a traceback | `TestCallLLM.test_unexpected_response_shape_errors_cleanly_not_with_traceback` |
 | Oversized input truncated before sending to the model | `TestCallLLM.test_truncates_oversized_content` |
 
 ## TODO

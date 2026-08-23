@@ -646,6 +646,13 @@ class TestCallLLM(unittest.TestCase):
             out = flt.call_llm("lmstudio", "http://x", "some-model", "task", "content", 100)
         self.assertEqual(out, "hi")
 
+    def test_unexpected_response_shape_errors_cleanly_not_with_traceback(self):
+        for bad_payload in ({"error": "model overloaded"}, {"choices": []}, {"choices": [{"message": {}}]}):
+            with mock.patch("urllib.request.urlopen", return_value=self._fake_response(bad_payload)):
+                with self.assertRaises(SystemExit) as ctx:
+                    flt.call_llm("lmstudio", "http://x", "some-model", "task", "content", 100)
+            self.assertIn("unexpected response shape", str(ctx.exception))
+
     def test_openai_backend_uses_chat_completions_shape(self):
         captured = {}
 

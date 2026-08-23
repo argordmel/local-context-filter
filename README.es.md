@@ -363,6 +363,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Backend inalcanzable → error claro por backend | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
 | `--host` mal formado / respuesta JSON inválida → error limpio, no traceback | `TestListModels.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback`, `TestCallLLM.test_malformed_host_url_errors_cleanly_not_with_traceback`, `test_malformed_json_response_errors_cleanly_not_with_traceback` |
 | Error HTTP muestra el mensaje del cuerpo de la respuesta | `TestCallLLM.test_http_error_surfaces_response_body_message` |
+| JSON válido con forma inesperada (sin choices/message/content) → error limpio, no traceback | `TestCallLLM.test_unexpected_response_shape_errors_cleanly_not_with_traceback` |
 | Entrada sobredimensionada truncada antes de enviarse al modelo | `TestCallLLM.test_truncates_oversized_content` |
 
 ## TODO

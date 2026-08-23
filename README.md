@@ -1,4 +1,4 @@
-# claude-local-search-skill
+# local-context-filter
 
 A [Claude Code](https://claude.com/claude-code) skill (`local-context-filter`) that
 offloads big/raw context to a **local** LLM before anything reaches Claude:
@@ -24,7 +24,7 @@ locally and for free — Claude only ever sees the distilled result.
 ## Install
 
 ```bash
-git clone git@github.com:argordmel/claude-local-search-skill.git ~/.claude/skills/local-context-filter
+git clone git@github.com:argordmel/local-context-filter.git ~/.claude/skills/local-context-filter
 ```
 
 That's it — Claude Code auto-discovers any skill under `~/.claude/skills/`.
@@ -34,8 +34,8 @@ If you already have a `~/.claude/skills/local-context-filter` (e.g. from an
 earlier manual setup), remove it first or clone elsewhere and symlink:
 
 ```bash
-git clone git@github.com:argordmel/claude-local-search-skill.git ~/code/claude-local-search-skill
-ln -s ~/code/claude-local-search-skill ~/.claude/skills/local-context-filter
+git clone git@github.com:argordmel/local-context-filter.git ~/code/local-context-filter
+ln -s ~/code/local-context-filter ~/.claude/skills/local-context-filter
 ```
 
 ### Requirements

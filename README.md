@@ -144,7 +144,7 @@ For exact string/regex search in a project, prefer the `local-context-filter` sk
 
 For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
 
-For exploring a project's file/directory structure (finding a file by name, listing a folder), prefer the same skill's `--ls` mode over `bash ls`/`find`/`tree` — it's free too and never puts the listing through Claude's context beyond the final printed result.
+Never run `bash ls`, `find`, or `tree` to explore a project's file/directory structure (listing a folder, finding a file by name) — always use the same skill's `--ls` mode instead. It's free, zero Claude context tokens, same as `--grep`. This applies even to a simple one-off "list the files in X" request — don't reach for Bash out of habit.
 ```
 
 Without that instruction, Claude will still *discover* the skill via its

@@ -133,8 +133,8 @@ def list_models(backend, host):
             start_hint = "the server"
         sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint} (or check --host is a valid URL).")
     if backend == "ollama":
-        return [m.get("name") for m in data.get("models", [])]
-    return [m.get("id") for m in data.get("data", [])]
+        return [name for m in data.get("models", []) if (name := m.get("name"))]
+    return [id_ for m in data.get("data", []) if (id_ := m.get("id"))]
 
 
 def running_ollama_model(host):

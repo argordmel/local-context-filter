@@ -343,6 +343,7 @@ needs to be running to pass.
 | `--task` nonexistent/binary `--input` → clean error, not a traceback | `TestReadInput.test_nonexistent_file_errors_cleanly_not_with_traceback`, `test_binary_file_errors_cleanly_not_with_traceback`, `TestCLIEndToEnd.test_task_nonexistent_input_errors_cleanly_not_with_traceback` |
 | `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Ollama backend: list models, generate call | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
+| Model entry missing name/id → skipped, not a crash (was a `TypeError` sorting `None` in the error message) | `TestListModels.test_entry_missing_name_is_skipped_not_crashed_on`, `test_entry_missing_id_is_skipped_not_crashed_on` |
 | LM Studio backend: list models, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
 | Generic `openai` backend | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
 | `--backend openai` requires `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |

@@ -566,6 +566,18 @@ class TestListModels(unittest.TestCase):
             names = flt.list_models("openai", "http://x")
         self.assertEqual(names, ["llama-3-8b-instruct"])
 
+    def test_entry_missing_name_is_skipped_not_crashed_on(self):
+        payload = {"models": [{"name": "qwen2.5:7b"}, {"no_name_field": True}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            names = flt.list_models("ollama", "http://x")
+        self.assertEqual(names, ["qwen2.5:7b"])
+
+    def test_entry_missing_id_is_skipped_not_crashed_on(self):
+        payload = {"data": [{"id": "llama-3-8b-instruct"}, {"no_id_field": True}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            names = flt.list_models("lmstudio", "http://x")
+        self.assertEqual(names, ["llama-3-8b-instruct"])
+
     def test_unreachable_exits_with_backend_specific_hint(self):
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
             with self.assertRaises(SystemExit) as ctx:

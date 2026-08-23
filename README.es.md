@@ -353,6 +353,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--task` con `--input` inexistente/binario → error limpio, no traceback | `TestReadInput.test_nonexistent_file_errors_cleanly_not_with_traceback`, `test_binary_file_errors_cleanly_not_with_traceback`, `TestCLIEndToEnd.test_task_nonexistent_input_errors_cleanly_not_with_traceback` |
 | `--task` sin `--input` y sin stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
 | Backend Ollama: listar modelos, llamada generate | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
+| Entrada de modelo sin name/id → se salta, no crashea (antes daba `TypeError` al ordenar `None` en el mensaje de error) | `TestListModels.test_entry_missing_name_is_skipped_not_crashed_on`, `test_entry_missing_id_is_skipped_not_crashed_on` |
 | Backend LM Studio: listar modelos, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
 | Backend genérico `openai` | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
 | `--backend openai` requiere `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |

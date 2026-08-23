@@ -85,6 +85,8 @@ EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__"
 MAX_GREP_MATCHES = 500
 ALLOWED_RUN_BINS = {"npm", "npx", "pnpm", "yarn"}
 RUN_TIMEOUT = 600
+USAGE_LOG_TRIM_TRIGGER = 6000  # rotate once the log exceeds this many lines...
+USAGE_LOG_KEEP_LINES = 5000    # ...keeping only the most recent this many
 LOG_PATH = os.environ.get(
     "LOCAL_CONTEXT_FILTER_LOG",
     os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.json"),
@@ -365,12 +367,31 @@ def generate_report(log_path):
     return "\n".join(lines)
 
 
+def rotate_usage_log_if_needed(path):
+    """Trim LOG_PATH to the most recent USAGE_LOG_KEEP_LINES lines once it
+    exceeds USAGE_LOG_TRIM_TRIGGER lines, so it never grows unbounded.
+
+    Best-effort, like log_usage: any failure is silently ignored.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > USAGE_LOG_TRIM_TRIGGER:
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines[-USAGE_LOG_KEEP_LINES:])
+    except OSError:
+        pass
+
+
 def log_usage(mode, backend, chars_in, chars_out):
     """Append one JSON line to LOG_PATH with local-only usage metadata.
 
     No file contents, paths, or task text are recorded — only counts. Never
     raises: a logging failure (e.g. read-only filesystem) must not break the
-    actual command.
+    actual command. Rotates the log (see rotate_usage_log_if_needed) once it
+    grows past USAGE_LOG_TRIM_TRIGGER lines — old entries are dropped, but
+    --report's totals only ever reflect what's currently in the file anyway,
+    so this just bounds disk use without changing what --report can show.
     """
     try:
         tokens_saved_est = None
@@ -388,6 +409,7 @@ def log_usage(mode, backend, chars_in, chars_out):
             f.write(json.dumps(entry) + "\n")
     except OSError:
         pass
+    rotate_usage_log_if_needed(LOG_PATH)
 
 
 def count_lines(root, excluded_dirs=None):

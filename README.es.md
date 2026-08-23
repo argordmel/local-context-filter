@@ -236,6 +236,12 @@ tendencia, no como cifra exacta. Sobrescribí la ruta con
 corrida igual funciona — el fallo de log es silencioso y nunca bloquea el
 comando. `--report` imprime totales (por modo); `--clean` borra el log.
 
+**Auto-mantenido, sin trabajo manual:** una vez que el log pasa las 6000
+líneas se recorta automáticamente a las 5000 más recientes en la próxima
+corrida — nunca crece sin límite, y no necesitas acordarte de correr
+`--clean` vos mismo. `--clean` sigue ahí para cuando realmente quieras
+resetear el contador a cero.
+
 ## Excludes por proyecto
 
 `--grep`, `--ls`, `--find`, y `--count` saltan `.git`, `node_modules`, `dist`,
@@ -311,6 +317,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--report` totales por modo, sentinel `NO_USAGE_DATA` | `TestGenerateReport` (todos los casos), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutuamente excluyentes con otros modos | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
 | `--clean` borra usage.json, idempotente | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |
+| Log de uso rota pasadas 6000 líneas, conserva las 5000 más recientes, intacto bajo el gatillo | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (todos los casos) |
 | Entrada sobredimensionada de `--task` en chunks (no truncada), resultados unidos | `TestCallLLMChunked` (todos los casos) |
 | Confinamiento de rutas (`../`, absolutas, symlink hacia afuera) | `TestConfineToRoot` (todos los casos, incl. `test_symlink_pointing_outside_root_rejected`) |
 | `--task` leyendo archivo / directorio / stdin | `TestReadInput`, `TestReadDirectory` |

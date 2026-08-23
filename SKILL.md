@@ -296,6 +296,11 @@ tokenizer — good for trend, not exact accounting. Override the location
 with `LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; a write failure (e.g.
 read-only disk) is silently ignored and never breaks the actual command.
 
+Self-maintaining: once the log passes 6000 lines it's automatically
+trimmed down to the most recent 5000, so it never grows unbounded — no
+manual `--clean` needed for upkeep. `--clean` still exists for when you
+want to reset the count to zero on purpose.
+
 Two flags read/manage it directly, no LLM involved:
 
 ```bash

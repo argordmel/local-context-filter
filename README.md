@@ -229,6 +229,12 @@ tokenizer, useful as a trend, not an exact figure. Override the path with
 still succeeds — logging failures are silent and never block the command.
 `--report` prints totals (by mode); `--clean` deletes the log.
 
+**Self-maintaining, no manual upkeep needed:** once the log passes 6000
+lines it's automatically trimmed to the most recent 5000 on the next run
+— it never grows unbounded, and you don't need to remember to run
+`--clean` yourself. `--clean` is still there for when you actually want
+to reset the count to zero.
+
 ## Project-level excludes
 
 `--grep`, `--ls`, `--find`, and `--count` skip `.git`, `node_modules`, `dist`,
@@ -301,6 +307,7 @@ needs to be running to pass.
 | `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
 | `--clean` deletes usage.json, idempotent | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |
+| Usage log rotates past 6000 lines, keeps most recent 5000, untouched below trigger | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (all cases) |
 | Oversized `--task` input chunked (not truncated), results joined | `TestCallLLMChunked` (all cases) |
 | Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |

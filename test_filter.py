@@ -220,6 +220,48 @@ class TestLogUsage(TempRepoTestCase):
         flt.LOG_PATH = os.path.join(self.tmpdir, "nonexistent-dir", "usage.json")
         flt.log_usage("ls", None, 10, 10)  # should not raise
 
+    def test_log_stays_under_trigger_untouched(self):
+        for i in range(10):
+            flt.log_usage("grep", None, 10, 5)
+        with open(flt.LOG_PATH, "r", encoding="utf-8") as f:
+            self.assertEqual(len(f.readlines()), 10)
+
+    def test_log_rotates_once_over_trigger_keeping_most_recent(self):
+        with open(flt.LOG_PATH, "w", encoding="utf-8") as f:
+            for i in range(flt.USAGE_LOG_TRIM_TRIGGER):
+                f.write(json.dumps({"n": i}) + "\n")
+        flt.log_usage("grep", None, 10, 5)  # pushes it over the trigger
+        with open(flt.LOG_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), flt.USAGE_LOG_KEEP_LINES)
+        self.assertEqual(json.loads(lines[0])["n"], flt.USAGE_LOG_TRIM_TRIGGER - flt.USAGE_LOG_KEEP_LINES + 1)
+        self.assertEqual(json.loads(lines[-1])["mode"], "grep")
+
+
+class TestRotateUsageLog(TempRepoTestCase):
+    def test_missing_file_is_a_noop(self):
+        flt.rotate_usage_log_if_needed(os.path.join(self.tmpdir, "does-not-exist.json"))  # should not raise
+
+    def test_trims_to_keep_lines_when_over_trigger(self):
+        path = os.path.join(self.tmpdir, "usage.json")
+        with open(path, "w", encoding="utf-8") as f:
+            for i in range(flt.USAGE_LOG_TRIM_TRIGGER + 1):
+                f.write(f'{{"n": {i}}}\n')
+        flt.rotate_usage_log_if_needed(path)
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), flt.USAGE_LOG_KEEP_LINES)
+        self.assertEqual(json.loads(lines[-1])["n"], flt.USAGE_LOG_TRIM_TRIGGER)
+
+    def test_under_trigger_left_untouched(self):
+        path = os.path.join(self.tmpdir, "usage.json")
+        with open(path, "w", encoding="utf-8") as f:
+            for i in range(10):
+                f.write(f'{{"n": {i}}}\n')
+        flt.rotate_usage_log_if_needed(path)
+        with open(path, "r", encoding="utf-8") as f:
+            self.assertEqual(len(f.readlines()), 10)
+
 
 class TestListTree(TempRepoTestCase):
     def test_lists_files_and_dirs(self):

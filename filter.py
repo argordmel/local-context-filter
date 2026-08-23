@@ -5,7 +5,7 @@ Usage:
   python3 filter.py --task "TASK" --input FILE_OR_DIR [--backend ollama|lmstudio|openai] [--host URL] [--model TAG] [--max-words N]
   cat file | python3 filter.py --task "TASK"
   python3 filter.py --grep PATTERN [--input DIR] [--task "TASK"]
-  python3 filter.py --diff [--task "TASK"]
+  python3 filter.py --diff [--input PATH] [--task "TASK"]
 
 --input may be a file or a directory (searched recursively, subdirs included).
 Paths are confined to the current working directory: parent traversal (../,
@@ -17,9 +17,10 @@ involved, cheapest and most precise option for exact-pattern search. Add
 --task on top of --grep to additionally have the local model narrow a large
 match list down to what's relevant to that task.
 
---diff runs `git diff HEAD` (staged + unstaged) at cwd and prints it as-is —
-no LLM involved. Add --task to have the local model filter it down to what's
-relevant to that task instead. Cannot combine with --grep or --input.
+--diff runs `git diff HEAD` (staged + unstaged) at cwd, or scoped to
+--input (a single file or directory) if given, and prints it as-is — no
+LLM involved. Add --task to have the local model filter it down to what's
+relevant to that task instead. Cannot combine with --grep.
 
 --backend selects the local server: "ollama" (default, http://localhost:11434),
 "lmstudio" (OpenAI-compatible, http://localhost:1234), or "openai" (any other
@@ -169,12 +170,17 @@ def read_directory(root):
     return "\n\n".join(chunks)
 
 
-def get_git_diff(root):
-    """Return `git diff HEAD` (staged + unstaged) at root, as text."""
+def get_git_diff(root, path=None):
+    """Return `git diff HEAD` (staged + unstaged) at root, as text.
+
+    If path is given, scopes the diff to that file/directory (must already
+    be confined to root by the caller).
+    """
+    cmd = ["git", "diff", "HEAD"]
+    if path:
+        cmd += ["--", os.path.relpath(path, root)]
     try:
-        result = subprocess.run(
-            ["git", "diff", "HEAD"], cwd=root, capture_output=True, text=True, timeout=30
-        )
+        result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
         sys.exit("error: git not found on PATH")
     if result.returncode != 0:
@@ -250,10 +256,10 @@ def call_llm(backend, host, model, task, content, max_words):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--task", help="what the filtered content will be used for (required unless --grep is used alone)")
-    ap.add_argument("--input", help="file or directory to filter/search (recursive); omit to read stdin")
+    ap.add_argument("--input", help="file or directory to filter/search (recursive); with --diff, scopes the diff to this path; omit to read stdin (LLM mode) or diff the whole repo (--diff)")
     ap.add_argument("--grep", metavar="PATTERN", help="exact regex search (like grep -rn) under --input, no LLM")
     ap.add_argument("--ignore-case", action="store_true", help="case-insensitive --grep")
-    ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd; no LLM without --task")
+    ap.add_argument("--diff", action="store_true", help="filter `git diff HEAD` at cwd (or --input path); no LLM without --task")
     ap.add_argument("--backend", choices=["ollama", "lmstudio", "openai"], default="ollama", help="local LLM server (default: ollama)")
     ap.add_argument("--host", help="override backend host (default: ollama=http://localhost:11434, lmstudio=http://localhost:1234; required for --backend openai)")
     ap.add_argument("--model", help="model tag/id; default: qwen2.5:7b on ollama, first available model on lmstudio/openai")
@@ -264,9 +270,10 @@ def main():
     host = args.host or DEFAULT_HOSTS[args.backend]
 
     if args.diff:
-        if args.grep or args.input:
-            ap.error("--diff cannot be combined with --grep or --input")
-        diff = get_git_diff(ROOT)
+        if args.grep:
+            ap.error("--diff cannot be combined with --grep")
+        diff_path = confine_to_root(args.input) if args.input else None
+        diff = get_git_diff(ROOT, diff_path)
         if not diff.strip():
             print("NO_CHANGES")
             return

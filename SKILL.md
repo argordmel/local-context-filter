@@ -137,18 +137,23 @@ python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "wh
 ### Working-tree diff (`--diff`)
 
 ```bash
-# raw diff, no LLM
+# raw diff, whole repo, no LLM
 python3 ~/.claude/skills/local-context-filter/filter.py --diff
+
+# scoped to one file/directory
+python3 ~/.claude/skills/local-context-filter/filter.py --diff --input README.md
 
 # filtered by task
 python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
 ```
 
 Runs `git diff HEAD` (staged + unstaged) at cwd and prints it as-is — no LLM
-involved, zero context cost, same as `--grep` alone. Add `--task` to have the
-local model filter the diff down to what's relevant. Prints `NO_CHANGES` if
-the working tree is clean, exits with an error if cwd isn't a git repo.
-Cannot combine with `--grep` or `--input`.
+involved, zero context cost, same as `--grep` alone. Pass `--input` (a file
+or directory, same confinement rules as elsewhere) to scope the diff to
+just that path instead of the whole repo. Add `--task` to have the local
+model filter the diff down to what's relevant. Prints `NO_CHANGES` if the
+diff is empty, exits with an error if cwd isn't a git repo. Cannot combine
+with `--grep`.
 
 ### Real cost example
 
@@ -169,10 +174,10 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | Flag | Default | Purpose |
 |---|---|---|
 | `--task` | required unless `--grep` used alone | what you're using this content for — steers what's kept |
-| `--input` | stdin (LLM mode) / cwd (`--grep`) | file or directory to filter/search |
+| `--input` | stdin (LLM mode) / cwd (`--grep`, `--diff`) | file or directory to filter/search/diff |
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
-| `--diff` | off | filter `git diff HEAD` at cwd instead of `--input`; no-LLM without `--task` |
+| `--diff` | off | filter `git diff HEAD` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |
 | `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`); **required** for `--backend openai` |
 | `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |

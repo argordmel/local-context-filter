@@ -14,8 +14,8 @@ offloads big/raw context to a **local** LLM before anything reaches Claude:
   irrelevant and only the compact result goes into Claude's context.
 - **`--grep` + `--task`** — grep first (exact, free), then have the local
   model narrow a noisy match list down to what's relevant.
-- **`--diff`** — filters `git diff HEAD` at cwd; raw diff (free) without
-  `--task`, or model-filtered with it.
+- **`--diff`** — filters `git diff HEAD` at cwd (or scoped to `--input`);
+  raw diff (free) without `--task`, or model-filtered with it.
 
 Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
 or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
@@ -106,8 +106,11 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 # grep first, then let the local model narrow a noisy match list
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "which TODOs are about auth"
 
-# raw working-tree diff, no LLM, no Claude tokens
+# raw working-tree diff, whole repo, no LLM, no Claude tokens
 python3 ~/.claude/skills/local-context-filter/filter.py --diff
+
+# same, scoped to one file
+python3 ~/.claude/skills/local-context-filter/filter.py --diff --input README.md
 
 # same, filtered by task
 python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
@@ -159,6 +162,34 @@ python3 ~/.claude/skills/local-context-filter/test_filter.py -v
 `unittest`, stdlib only. Mocks all network calls (Ollama/LM Studio/generic
 OpenAI-compatible) and uses real temp git repos for `--diff` — no server
 needs to be running to pass.
+
+### Coverage checklist
+
+| Feature | Test(s) |
+|---|---|
+| `--grep` exact search, line numbers | `TestGrepSearch.test_finds_matches_with_line_numbers`, `TestCLIEndToEnd.test_grep_prints_matches` |
+| `--grep --ignore-case` | `TestGrepSearch.test_case_insensitive`, `TestCLIEndToEnd.test_grep_ignore_case_flag` |
+| `--grep` no matches → `NO_MATCHES` | `TestGrepSearch.test_no_matches_returns_empty_list`, `TestCLIEndToEnd.test_grep_no_matches_prints_sentinel` |
+| `--grep` skips `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
+| `--grep` 500-match cap + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
+| `--grep` skips unreadable/binary files | `TestGrepSearch.test_binary_file_skipped_without_crash` |
+| `--diff` whole repo, raw | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
+| `--diff --input` scoped to one path | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
+| `--diff` clean tree → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
+| `--diff` outside a git repo → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
+| `--diff` + `--grep` mutually exclusive | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
+| Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
+| `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |
+| `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
+| Ollama backend: list models, generate call | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
+| LM Studio backend: list models, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
+| Generic `openai` backend | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
+| `--backend openai` requires `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |
+| Model auto-resolution (Ollama default, alphabetical fallback) | `TestResolveModel` (all cases) |
+| Explicit `--model` validated against what's available | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
+| Backend unreachable → clear per-backend error | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
+| HTTP error surfaces server's response body | `TestCallLLM.test_http_error_surfaces_response_body_message` |
+| Oversized input truncated before sending to the model | `TestCallLLM.test_truncates_oversized_content` |
 
 ## TODO
 

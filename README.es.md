@@ -2,7 +2,7 @@
 
 *[Read in English](README.md)*
 
-Una skill de [Claude Code](https://claude.com/claude-code) (`local-context-filter`) que
+Una skill para [Claude Code](https://claude.com/claude-code) (`local-context-filter`) que
 delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
 
 - **`--grep`** — búsqueda regex recursiva real (como `grep -rn`), con raíz en
@@ -14,8 +14,9 @@ delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
   irrelevante y solo el resultado compacto entra al contexto de Claude.
 - **`--grep` + `--task`** — grep primero (exacto, gratis), y luego el modelo
   local reduce una lista de coincidencias ruidosa a lo relevante.
-- **`--diff`** — filtra `git diff HEAD` en el directorio actual; diff crudo
-  (gratis) sin `--task`, o filtrado por el modelo con `--task`.
+- **`--diff`** — filtra `git diff HEAD` en el directorio actual (o acotado
+  a `--input`); diff crudo (gratis) sin `--task`, o filtrado por el modelo
+  con `--task`.
 
 Soportado por [Ollama](https://ollama.com) (por defecto), [LM Studio](https://lmstudio.ai),
 o cualquier otro servidor compatible con OpenAI (llama.cpp server, vLLM, ...)
@@ -108,8 +109,11 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 # grep primero, y que el modelo local reduzca una lista de coincidencias ruidosa
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "cuáles TODOs son sobre auth"
 
-# diff crudo del working tree, sin LLM, sin tokens de Claude
+# diff crudo del working tree, todo el repo, sin LLM, sin tokens de Claude
 python3 ~/.claude/skills/local-context-filter/filter.py --diff
+
+# igual, acotado a un archivo
+python3 ~/.claude/skills/local-context-filter/filter.py --diff --input README.md
 
 # igual, filtrado por tarea
 python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "qué cambios tocan auth"
@@ -165,6 +169,34 @@ python3 ~/.claude/skills/local-context-filter/test_filter.py -v
 `unittest`, solo stdlib. Mockea todas las llamadas de red (Ollama/LM
 Studio/genérico compatible con OpenAI) y usa repos git temporales reales
 para `--diff` — no hace falta ningún servidor corriendo para que pasen.
+
+### Checklist de cobertura
+
+| Funcionalidad | Test(s) |
+|---|---|
+| `--grep` búsqueda exacta, números de línea | `TestGrepSearch.test_finds_matches_with_line_numbers`, `TestCLIEndToEnd.test_grep_prints_matches` |
+| `--grep --ignore-case` | `TestGrepSearch.test_case_insensitive`, `TestCLIEndToEnd.test_grep_ignore_case_flag` |
+| `--grep` sin coincidencias → `NO_MATCHES` | `TestGrepSearch.test_no_matches_returns_empty_list`, `TestCLIEndToEnd.test_grep_no_matches_prints_sentinel` |
+| `--grep` salta `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
+| `--grep` tope de 500 coincidencias + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
+| `--grep` salta archivos binarios/no legibles | `TestGrepSearch.test_binary_file_skipped_without_crash` |
+| `--diff` repo completo, crudo | `TestGitDiff.test_unstaged_change_shows_in_diff`, `TestGitDiff.test_staged_change_shows_in_diff`, `TestCLIEndToEnd.test_diff_prints_raw_diff` |
+| `--diff --input` acotado a una ruta | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
+| `--diff` árbol limpio → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
+| `--diff` fuera de un repo git → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
+| `--diff` + `--grep` mutuamente excluyentes | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
+| Confinamiento de rutas (`../`, absolutas, symlink hacia afuera) | `TestConfineToRoot` (todos los casos, incl. `test_symlink_pointing_outside_root_rejected`) |
+| `--task` leyendo archivo / directorio / stdin | `TestReadInput`, `TestReadDirectory` |
+| `--task` sin `--input` y sin stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
+| Backend Ollama: listar modelos, llamada generate | `TestListModels.test_ollama_parses_names`, `TestCallLLM.test_ollama_returns_response_field` |
+| Backend LM Studio: listar modelos, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
+| Backend genérico `openai` | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
+| `--backend openai` requiere `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |
+| Auto-resolución de modelo (default de Ollama, fallback alfabético) | `TestResolveModel` (todos los casos) |
+| `--model` explícito validado contra lo disponible | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
+| Backend inalcanzable → error claro por backend | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
+| Error HTTP muestra el mensaje del cuerpo de la respuesta | `TestCallLLM.test_http_error_surfaces_response_body_message` |
+| Entrada sobredimensionada truncada antes de enviarse al modelo | `TestCallLLM.test_truncates_oversized_content` |
 
 ## TODO
 

@@ -61,6 +61,16 @@ class TestConfineToRoot(TempRepoTestCase):
     def test_root_itself_allowed(self):
         self.assertEqual(flt.confine_to_root("."), flt.ROOT)
 
+    def test_symlink_pointing_outside_root_rejected(self):
+        outside = tempfile.mkdtemp()
+        try:
+            link = os.path.join(self.tmpdir, "escape")
+            os.symlink(outside, link)
+            with self.assertRaises(SystemExit):
+                flt.confine_to_root("escape")
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
+
 
 class TestGrepSearch(TempRepoTestCase):
     def test_finds_matches_with_line_numbers(self):
@@ -81,6 +91,13 @@ class TestGrepSearch(TempRepoTestCase):
         matches = flt.grep_search(flt.ROOT, "ServiceOrder")
         self.assertEqual(len(matches), 1)
         self.assertIn("app/a.js", matches[0])
+
+    def test_hits_match_cap_and_warns(self):
+        self.write("big.txt", "\n".join(["ServiceOrder"] * (flt.MAX_GREP_MATCHES + 50)))
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            matches = flt.grep_search(flt.ROOT, "ServiceOrder")
+        self.assertEqual(len(matches), flt.MAX_GREP_MATCHES)
+        self.assertIn(f"hit {flt.MAX_GREP_MATCHES}-match cap", stderr.getvalue())
 
     def test_no_matches_returns_empty_list(self):
         self.write("a.js", "nothing here")
@@ -122,6 +139,17 @@ class TestGitDiff(TempRepoTestCase):
         subprocess.run(["git", "add", "a.txt"], cwd=self.tmpdir, check=True)
         diff = flt.get_git_diff(flt.ROOT)
         self.assertIn("line2", diff)
+
+    def test_path_scopes_diff_to_single_file(self):
+        self._init_repo()
+        self.write("b.txt", "line1\n")
+        subprocess.run(["git", "add", "b.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add b"], cwd=self.tmpdir, check=True)
+        self.write("a.txt", "line1\nline2\n")
+        self.write("b.txt", "line1\nline2\n")
+        diff = flt.get_git_diff(flt.ROOT, os.path.join(flt.ROOT, "a.txt"))
+        self.assertIn("a.txt", diff)
+        self.assertNotIn("b.txt", diff)
 
 
 class TestResolveModel(unittest.TestCase):
@@ -298,6 +326,89 @@ class TestCLIArgGating(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--diff cannot be combined", result.stderr)
+
+
+class TestReadInput(TempRepoTestCase):
+    def test_reads_from_file(self):
+        self.write("a.txt", "hello")
+        self.assertEqual(flt.read_input("a.txt"), "hello")
+
+    def test_reads_from_stdin_when_no_input(self):
+        with mock.patch("sys.stdin") as fake_stdin:
+            fake_stdin.isatty.return_value = False
+            fake_stdin.read.return_value = "piped content"
+            self.assertEqual(flt.read_input(None), "piped content")
+
+    def test_no_input_and_no_stdin_exits(self):
+        with mock.patch("sys.stdin") as fake_stdin:
+            fake_stdin.isatty.return_value = True
+            with self.assertRaises(SystemExit):
+                flt.read_input(None)
+
+
+class TestCLIEndToEnd(TempRepoTestCase):
+    """Runs the real CLI as a subprocess — no network needed for --grep/--diff without --task."""
+
+    SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "filter.py")
+
+    def run_cli(self, *args):
+        return subprocess.run(
+            [sys.executable, self.SCRIPT, *args], cwd=self.tmpdir, capture_output=True, text=True,
+        )
+
+    def test_grep_prints_matches(self):
+        self.write("a.js", "const ServiceOrder = 1;\n")
+        result = self.run_cli("--grep", "ServiceOrder")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("a.js:1:", result.stdout)
+
+    def test_grep_no_matches_prints_sentinel(self):
+        self.write("a.js", "nothing here\n")
+        result = self.run_cli("--grep", "ServiceOrder")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_MATCHES")
+
+    def test_grep_ignore_case_flag(self):
+        self.write("a.js", "SERVICEORDER\n")
+        result = self.run_cli("--grep", "serviceorder", "--ignore-case")
+        self.assertIn("a.js:1:", result.stdout)
+
+    def _init_repo(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=self.tmpdir, check=True)
+        self.write("a.txt", "line1\n")
+        subprocess.run(["git", "add", "a.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=self.tmpdir, check=True)
+
+    def test_diff_prints_raw_diff(self):
+        self._init_repo()
+        self.write("a.txt", "line1\nline2\n")
+        result = self.run_cli("--diff")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("+line2", result.stdout)
+
+    def test_diff_no_changes_prints_sentinel(self):
+        self._init_repo()
+        result = self.run_cli("--diff")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_CHANGES")
+
+    def test_diff_scoped_to_input(self):
+        self._init_repo()
+        self.write("b.txt", "line1\n")
+        subprocess.run(["git", "add", "b.txt"], cwd=self.tmpdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add b"], cwd=self.tmpdir, check=True)
+        self.write("a.txt", "line1\nline2\n")
+        self.write("b.txt", "line1\nline2\n")
+        result = self.run_cli("--diff", "--input", "a.txt")
+        self.assertIn("a.txt", result.stdout)
+        self.assertNotIn("b.txt", result.stdout)
+
+    def test_diff_not_a_git_repo_errors(self):
+        result = self.run_cli("--diff")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("error:", result.stdout + result.stderr)
 
 
 class TestReadDirectory(TempRepoTestCase):

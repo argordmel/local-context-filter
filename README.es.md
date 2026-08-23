@@ -31,6 +31,12 @@ delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
 - **`--report` / `--clean`** — lee o borra el log local de uso
   (`usage.json`) que trackea tokens ahorrados estimados a lo largo del tiempo.
 
+`--input` normalmente funciona relativo a tu directorio actual, pero
+también acepta una ruta absoluta o expandida con `~` en otro lado dentro
+de tu home (ej. `--input ~/otro-proyecto`) — así podés apuntar cualquier
+modo a otro proyecto sin hacer `cd` primero. Ver [Seguridad](#seguridad)
+para la regla exacta.
+
 Soportado por [Ollama](https://ollama.com) (por defecto), [LM Studio](https://lmstudio.ai),
 o cualquier otro servidor compatible con OpenAI (llama.cpp server, vLLM, ...)
 vía `--backend openai --host <url>`. Seleccionable con `--backend`. Ver [TODO](#todo).
@@ -255,15 +261,21 @@ saltar más directorios en un proyecto sin tocar la skill, agregá
 
 ## Seguridad
 
-- Confinamiento de rutas: `--input` (y la raíz de búsqueda de `--grep`)
-  puede entrar libremente a subdirectorios pero nunca puede resolver por
-  encima del directorio desde donde corriste el comando — `../`, rutas
-  absolutas fuera de él, y symlinks que apunten afuera son todos
-  rechazados. Esto también cubre symlinks encontrados *dentro* de un árbol
-  ya confinado durante un recorrido recursivo (`--grep`, `--ls`, `--find`,
-  `--count`, y `--task` sobre un directorio) — cada uno se chequea
-  individualmente, así que un symlink anidado varios niveles adentro que
-  apunte afuera tampoco puede filtrar contenido.
+- Confinamiento de rutas: un `--input` **relativo** (y la raíz de búsqueda
+  de `--grep`) puede entrar libremente a subdirectorios pero nunca puede
+  resolver por encima del directorio desde donde corriste el comando —
+  `../` más allá de él es rechazado. Un `--input` **absoluto** o
+  **expandido con `~`** también se permite, pero solo si resuelve dentro
+  de tu home (`$HOME`) — cualquier cosa fuera de `$HOME` (`/etc`, el home
+  de otro usuario, `/`, ...) se rechaza con error claro; una ruta dentro
+  de `$HOME` se vuelve su propio límite de confianza para ese comando en
+  vez del cwd, así podés apuntar a otro proyecto sin hacer `cd` primero.
+  Los symlinks que apunten fuera del límite activo son rechazados en
+  cualquier caso — incluyendo uno encontrado *dentro* de un árbol ya
+  confinado durante un recorrido recursivo (`--grep`, `--ls`, `--find`,
+  `--count`, y `--task` sobre un directorio), chequeado individualmente,
+  así que un symlink anidado varios niveles adentro que apunte afuera
+  tampoco puede filtrar contenido.
 - `--grep`, `--ls`, `--find`, y `--count` saltan automáticamente `.git`,
   `node_modules`, `dist`, `build`, `.venv`, `__pycache__`, `.next`,
   `coverage` (más los excludes de proyecto de arriba); `--grep` y
@@ -328,6 +340,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Log de uso rota pasadas 6000 líneas, conserva las 5000 más recientes, intacto bajo el gatillo | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (todos los casos) |
 | Entrada sobredimensionada de `--task` en chunks (no truncada), resultados unidos | `TestCallLLMChunked` (todos los casos) |
 | Confinamiento de rutas (`../`, absolutas, symlink hacia afuera) | `TestConfineToRoot` (todos los casos, incl. `test_symlink_pointing_outside_root_rejected`) |
+| `--input` absoluto/`~` ensancha el confinamiento dentro de `$HOME`, rechazado afuera, escape anidado sigue bloqueado | `TestSetConfineRoot` (todos los casos), `TestCLIEndToEnd.test_grep_absolute_input_under_home_works_without_cd`, `test_grep_absolute_input_outside_home_rejected` |
 | Symlink anidado que escapa la raíz no se lee/lista (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
 | Symlink anidado que apunta *adentro* de la raíz sigue funcionando | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` leyendo archivo / directorio / stdin | `TestReadInput`, `TestReadDirectory` |

@@ -110,12 +110,17 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 ```
 
 `--input` may be a file or a directory — directories are searched
-**recursively into subdirectories**, but the script is confined to the
-current working directory: it will never read anything above the folder
-you ran it from (`../`, absolute paths outside cwd, symlinks pointing out
-are all rejected — including a symlink found *inside* the tree partway
-through a recursive walk, not just `--input` itself). Run it from the
-folder you want as the search root.
+**recursively into subdirectories**. A **relative** `--input` (the normal
+case) is confined to the current working directory: it will never read
+anything above the folder you ran it from (`../` is rejected). An
+**absolute** or **`~`-expanded** `--input` (e.g.
+`--input /Users/you/other-project` or `--input ~/other-project`) is also
+allowed, but only when it resolves inside your home directory — that path
+then becomes its own trust boundary for the rest of that command, so you
+can point at a different project without `cd`ing into it first. Either
+way, symlinks pointing outside the active boundary are rejected —
+including one found *inside* the tree partway through a recursive walk,
+not just in `--input` itself.
 
 Or pipe stdin:
 

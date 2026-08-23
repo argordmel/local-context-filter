@@ -13,8 +13,11 @@ Usage:
   python3 filter.py --report
 
 --input may be a file or a directory (searched recursively, subdirs included).
-Paths are confined to the current working directory: parent traversal (../,
-paths outside cwd) is rejected.
+A relative --input is confined to the current working directory: parent
+traversal (../) past it is rejected. An absolute or ~-expanded --input is
+also allowed, but only inside your home directory — it becomes its own
+trust boundary for that command, so you can point at another project
+without cd'ing into it first.
 
 --grep does a real recursive regex search (like `grep -rn`) under --input
 (default: cwd; can also be a single file) and prints exact "path:line:
@@ -81,6 +84,8 @@ import urllib.error
 from datetime import datetime, timezone
 
 ROOT = os.path.realpath(os.getcwd())
+HOME = os.path.realpath(os.path.expanduser("~"))
+CONFINE_ROOT = ROOT  # cwd by default; main() may widen this to an absolute/~ --input under HOME
 EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__", ".next", "coverage"}
 MAX_GREP_MATCHES = 500
 ALLOWED_RUN_BINS = {"npm", "npx", "pnpm", "yarn"}
@@ -214,27 +219,53 @@ def resolve_model(backend, host, model):
 
 
 def confine_to_root(path):
-    """Resolve path and reject anything outside the current working directory (ROOT).
+    """Resolve path and reject anything outside CONFINE_ROOT.
 
-    Subdirectories are fine; parent traversal (../, absolute paths outside ROOT,
-    symlinks pointing out) is rejected.
+    CONFINE_ROOT is the current working directory (ROOT) by default.
+    main() widens it to an absolute or ~-expanded --input path instead,
+    but only when that path resolves inside HOME (see set_confine_root) —
+    so a relative path stays confined to cwd exactly as before, while an
+    absolute/~ path under your home directory becomes its own trust
+    boundary for the rest of that command (subdirectories are fine;
+    parent traversal past CONFINE_ROOT, or symlinks pointing outside it,
+    is rejected either way).
     """
-    real = os.path.realpath(path)
-    if real != ROOT and not real.startswith(ROOT + os.sep):
-        sys.exit(f"error: '{path}' resolves outside the current directory ({ROOT}); refusing")
+    real = os.path.realpath(os.path.expanduser(path))
+    if real != CONFINE_ROOT and not real.startswith(CONFINE_ROOT + os.sep):
+        sys.exit(f"error: '{path}' resolves outside the allowed root ({CONFINE_ROOT}); refusing")
     return real
 
 
+def set_confine_root(input_arg):
+    """Widen the module-level CONFINE_ROOT to input_arg if it's an absolute
+    or ~-expanded path — but only when it resolves inside HOME. A relative
+    --input leaves CONFINE_ROOT at its default (ROOT, the cwd), unchanged.
+
+    Exits with a clear error for an absolute/~ path outside HOME, before
+    any file is touched, rather than letting it fail deeper in a walk.
+    """
+    global CONFINE_ROOT
+    if not input_arg:
+        return
+    expanded = os.path.expanduser(input_arg)
+    if not os.path.isabs(expanded):
+        return
+    real = os.path.realpath(expanded)
+    if real != HOME and not real.startswith(HOME + os.sep):
+        sys.exit(f"error: absolute/~ --input must be inside your home directory ({HOME}); got '{input_arg}'")
+    CONFINE_ROOT = real
+
+
 def _is_symlink_escaping_root(path):
-    """True if path is a symlink whose target resolves outside the global
-    ROOT — used to skip symlinks found *inside* an already-confined tree
-    during a recursive walk (confine_to_root only checks the top-level
-    --input path itself, not every entry os.walk turns up underneath it).
+    """True if path is a symlink whose target resolves outside CONFINE_ROOT
+    — used to skip symlinks found *inside* an already-confined tree during
+    a recursive walk (confine_to_root only checks the top-level --input
+    path itself, not every entry os.walk turns up underneath it).
     """
     if not os.path.islink(path):
         return False
     real = os.path.realpath(path)
-    return real != ROOT and not real.startswith(ROOT + os.sep)
+    return real != CONFINE_ROOT and not real.startswith(CONFINE_ROOT + os.sep)
 
 
 def read_input(path):
@@ -718,7 +749,8 @@ def main():
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
-    excluded_dirs = EXCLUDED_DIRS | load_project_excludes(ROOT)
+    set_confine_root(args.input)
+    excluded_dirs = EXCLUDED_DIRS | load_project_excludes(CONFINE_ROOT)
 
     if args.ls:
         root = confine_to_root(args.input) if args.input else ROOT
@@ -758,7 +790,7 @@ def main():
 
     if args.diff:
         diff_path = confine_to_root(args.input) if args.input else None
-        diff = get_git_diff(ROOT, diff_path)
+        diff = get_git_diff(CONFINE_ROOT, diff_path)
         if not diff.strip():
             print("NO_CHANGES")
             log_usage("diff", None, 0, 0)

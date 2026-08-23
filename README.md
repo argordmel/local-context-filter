@@ -29,6 +29,12 @@ A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter
 - **`--report` / `--clean`** — read or wipe the local usage log
   (`usage.json`) that tracks estimated tokens saved over time.
 
+`--input` normally works relative to your current directory, but also
+accepts an absolute or `~`-expanded path elsewhere under your home
+directory (e.g. `--input ~/other-project`) — so you can point any mode at
+a different project without `cd`ing into it first. See
+[Safety](#safety) for the exact rule.
+
 Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
 or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
 `--backend openai --host <url>`. Selectable via `--backend`. See [TODO](#todo).
@@ -248,14 +254,20 @@ more directories in one project without editing the skill, add
 
 ## Safety
 
-- Path confinement: `--input` (and `--grep`'s search root) can go into
-  subdirectories freely but can never resolve above the directory you ran
-  the command from — `../`, absolute paths outside it, and symlinks
-  pointing out are all rejected. This also covers symlinks found *inside*
-  an already-confined tree during a recursive walk (`--grep`, `--ls`,
-  `--find`, `--count`, and `--task` on a directory) — each one found is
-  checked individually, so a symlink nested a few levels deep that points
-  outside can't leak content either.
+- Path confinement: a **relative** `--input` (and `--grep`'s search root)
+  can go into subdirectories freely but can never resolve above the
+  directory you ran the command from — `../` past it is rejected. An
+  **absolute** or **`~`-expanded** `--input` is also allowed, but only
+  when it resolves inside your home directory (`$HOME`) — anything
+  outside `$HOME` (`/etc`, another user's home, `/`, ...) is rejected with
+  a clear error; a path inside `$HOME` becomes its own trust boundary for
+  that command instead of cwd, so you can point at another project
+  without `cd`ing into it first. Symlinks pointing outside the active
+  boundary are rejected either way — including one found *inside* an
+  already-confined tree during a recursive walk (`--grep`, `--ls`,
+  `--find`, `--count`, and `--task` on a directory), checked individually,
+  so a symlink nested a few levels deep that points outside can't leak
+  content either.
 - `--grep`, `--ls`, `--find`, and `--count` auto-skip `.git`, `node_modules`,
   `dist`, `build`, `.venv`, `__pycache__`, `.next`, `coverage` (plus any
   project excludes above); `--grep` and `--find` also cap at 500 matches.
@@ -318,6 +330,7 @@ needs to be running to pass.
 | Usage log rotates past 6000 lines, keeps most recent 5000, untouched below trigger | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (all cases) |
 | Oversized `--task` input chunked (not truncated), results joined | `TestCallLLMChunked` (all cases) |
 | Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
+| Absolute/`~` `--input` widens confinement inside `$HOME`, rejected outside it, nested escape still blocked | `TestSetConfineRoot` (all cases), `TestCLIEndToEnd.test_grep_absolute_input_under_home_works_without_cd`, `test_grep_absolute_input_outside_home_rejected` |
 | Nested symlink escaping root not read/listed (grep, find, ls, read_directory, count) | `TestGrepSearch.test_nested_symlink_escaping_root_is_not_read`, `TestFindSearch.test_nested_symlink_escaping_root_is_not_listed`, `TestListTree.test_nested_symlink_escaping_root_is_not_listed`, `TestReadDirectory.test_nested_symlink_escaping_root_is_not_read`, `TestCLIEndToEnd.test_count_nested_symlink_escaping_root_is_not_read` |
 | Nested symlink pointing *inside* root still works | `TestGrepSearch.test_nested_symlink_inside_root_is_still_read` |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |

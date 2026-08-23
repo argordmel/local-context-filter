@@ -19,7 +19,9 @@ import filter as flt  # noqa: E402
 
 
 class TempRepoTestCase(unittest.TestCase):
-    """Base: creates a temp dir, chdirs into it, resets filter.ROOT to match."""
+    """Base: creates a temp dir, chdirs into it, resets filter.ROOT (and the
+    CONFINE_ROOT confinement boundary that defaults to it) to match.
+    """
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -27,12 +29,15 @@ class TempRepoTestCase(unittest.TestCase):
         os.chdir(self.tmpdir)
         self._orig_root = flt.ROOT
         flt.ROOT = os.path.realpath(self.tmpdir)
+        self._orig_confine_root = flt.CONFINE_ROOT
+        flt.CONFINE_ROOT = flt.ROOT
         self._orig_log_path = flt.LOG_PATH
         flt.LOG_PATH = os.path.join(self.tmpdir, "usage.json")
 
     def tearDown(self):
         os.chdir(self._orig_cwd)
         flt.ROOT = self._orig_root
+        flt.CONFINE_ROOT = self._orig_confine_root
         flt.LOG_PATH = self._orig_log_path
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -72,6 +77,58 @@ class TestConfineToRoot(TempRepoTestCase):
             with self.assertRaises(SystemExit):
                 flt.confine_to_root("escape")
         finally:
+            shutil.rmtree(outside, ignore_errors=True)
+
+
+class TestSetConfineRoot(TempRepoTestCase):
+    """CONFINE_ROOT itself is module state; each test restores it via
+    TempRepoTestCase's setUp/tearDown, same as ROOT.
+    """
+
+    def test_relative_input_leaves_confine_root_at_cwd(self):
+        flt.set_confine_root("some/relative/path")
+        self.assertEqual(flt.CONFINE_ROOT, flt.ROOT)
+
+    def test_no_input_leaves_confine_root_at_cwd(self):
+        flt.set_confine_root(None)
+        self.assertEqual(flt.CONFINE_ROOT, flt.ROOT)
+
+    def test_absolute_path_inside_home_widens_confine_root(self):
+        target = os.path.join(flt.HOME, ".local-context-filter-test-widen")
+        os.makedirs(target, exist_ok=True)
+        try:
+            flt.set_confine_root(target)
+            self.assertEqual(flt.CONFINE_ROOT, os.path.realpath(target))
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
+
+    def test_tilde_path_inside_home_widens_confine_root(self):
+        rel = ".local-context-filter-test-tilde"
+        target = os.path.join(flt.HOME, rel)
+        os.makedirs(target, exist_ok=True)
+        try:
+            flt.set_confine_root(f"~/{rel}")
+            self.assertEqual(flt.CONFINE_ROOT, os.path.realpath(target))
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
+
+    def test_absolute_path_outside_home_rejected(self):
+        with self.assertRaises(SystemExit):
+            flt.set_confine_root("/etc")
+
+    def test_widened_confine_root_still_blocks_nested_escape(self):
+        outside = tempfile.mkdtemp()
+        try:
+            target = os.path.join(flt.HOME, ".local-context-filter-test-nested")
+            os.makedirs(target, exist_ok=True)
+            with open(os.path.join(outside, "secret.txt"), "w") as f:
+                f.write("SECRET\n")
+            os.symlink(os.path.join(outside, "secret.txt"), os.path.join(target, "link.txt"))
+            flt.set_confine_root(target)
+            matches = flt.grep_search(flt.CONFINE_ROOT, "SECRET")
+            self.assertEqual(matches, [])
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
             shutil.rmtree(outside, ignore_errors=True)
 
 
@@ -783,6 +840,23 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("a.js:1:", result.stdout)
         self.assertNotIn("b.js", result.stdout)
+
+    def test_grep_absolute_input_under_home_works_without_cd(self):
+        target = os.path.join(flt.HOME, ".local-context-filter-test-e2e-home")
+        os.makedirs(target, exist_ok=True)
+        try:
+            with open(os.path.join(target, "a.js"), "w") as f:
+                f.write("const ServiceOrder = 1;\n")
+            result = self.run_cli("--grep", "ServiceOrder", "--input", target)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("a.js:1:", result.stdout)
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
+
+    def test_grep_absolute_input_outside_home_rejected(self):
+        result = self.run_cli("--grep", "x", "--input", "/etc")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be inside your home directory", result.stdout + result.stderr)
 
     def test_grep_no_matches_prints_sentinel(self):
         self.write("a.js", "nothing here\n")

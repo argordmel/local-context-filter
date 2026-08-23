@@ -1,16 +1,16 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local Ollama model first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama or LM Studio) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project without any of it entering Claude's context.
 ---
 
 # Local Context Filter
 
 ## Overview
 
-Pipes raw content (files, logs, pasted text) through a local Ollama model
-(`qwen2.5:7b` default) with a task description. The local model strips
-everything irrelevant and returns a compact result — that's what goes into
-Claude's context, not the raw blob.
+Pipes raw content (files, logs, pasted text) through a local model — Ollama
+(default, `qwen2.5:7b`) or LM Studio (OpenAI-compatible server) — with a
+task description. The local model strips everything irrelevant and returns
+a compact result — that's what goes into Claude's context, not the raw blob.
 
 ## When to Use
 
@@ -29,20 +29,35 @@ logs/docs, riskier for code you'll edit). For exact-match search use
 
 ## Requirements
 
-- `ollama serve` running locally (`curl -s http://localhost:11434/api/tags`
-  to check)
-- Model pulled: `ollama pull qwen2.5:7b` (or pass `--model` for another tag)
+Pick one backend — both aren't meant to run at once (RAM):
 
-The script self-checks both before doing any work: it fails fast with
-`error: Ollama not reachable at http://localhost:11434. Start it with
-\`ollama serve\`.` if the server is down, or `error: model 'X' not pulled.
-Run \`ollama pull X\` (available: ...)` if the tag isn't present locally —
-before reading `--input` or making any generate call.
+- **Ollama** (default): `ollama serve` running locally
+  (`curl -s http://localhost:11434/api/tags` to check). Model pulled:
+  `ollama pull qwen2.5:7b` (or pass `--model` for another tag).
+- **LM Studio**: local server started (Developer tab > Start Server,
+  default `http://localhost:1234`) with a model loaded. Pass
+  `--backend lmstudio`; `--model` optional (defaults to the first loaded
+  model).
+
+The script self-checks before doing any work: it fails fast with
+`error: {backend} not reachable at {host}. Start it with ...` if the
+server is down, or `error: model 'X' not available on {backend}. ...` if
+the tag/id isn't present — before reading `--input` or making any call.
+
+Override the host with `--host` if a backend runs on a non-default port.
 
 ## Usage
 
 ```bash
+# Ollama (default)
 python3 ~/.claude/skills/local-context-filter/filter.py \
+  --task "what you're trying to accomplish" \
+  --input /path/to/file.log \
+  --max-words 300
+
+# LM Studio
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --backend lmstudio \
   --task "what you're trying to accomplish" \
   --input /path/to/file.log \
   --max-words 300
@@ -109,13 +124,17 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--input` | stdin (LLM mode) / cwd (`--grep`) | file or directory to filter/search |
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
-| `--model` | `qwen2.5:7b` | Ollama model tag |
+| `--backend` | `ollama` | local LLM server: `ollama` or `lmstudio` |
+| `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`) |
+| `--model` | `qwen2.5:7b` (ollama) / first loaded model (lmstudio) | model tag/id |
 | `--max-words` | 300 | target size of filtered output |
 
 ## Common Mistakes
 
-- Ollama down or model not pulled — script now catches this upfront and
-  tells you the exact fix command, no need to debug it yourself.
+- Backend down or model not available — script now catches this upfront
+  and tells you the exact fix command, no need to debug it yourself.
+- Running Ollama and LM Studio at the same time on a low-RAM machine —
+  stop one before starting the other.
 - Vague `--task` ("summarize this") — the filter quality depends entirely
   on task specificity. "find the auth-related error" beats "look at this".
 - Very large directories — content over ~24k chars gets truncated (warning

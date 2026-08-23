@@ -13,7 +13,8 @@ offloads big/raw context to a **local** LLM before anything reaches Claude:
 - **`--grep` + `--task`** — grep first (exact, free), then have the local
   model narrow a noisy match list down to what's relevant.
 
-Currently backed by [Ollama](https://ollama.com). See [TODO](#todo).
+Backed by [Ollama](https://ollama.com) (default) or [LM Studio](https://lmstudio.ai)
+(OpenAI-compatible local server), selectable via `--backend`. See [TODO](#todo).
 
 ## Why
 
@@ -41,9 +42,14 @@ ln -s ~/code/local-context-filter ~/.claude/skills/local-context-filter
 ### Requirements
 
 - Python 3 (stdlib only — no dependencies to install)
-- [Ollama](https://ollama.com) running locally for the `--task` (LLM-filter)
-  mode: `ollama serve`, and a model pulled, e.g. `ollama pull qwen2.5:7b`
-  — `--grep` alone needs neither, it's pure Python.
+- `--grep` alone needs neither backend, it's pure Python.
+- For `--task` (LLM-filter) mode, one of:
+  - **Ollama** (default): `ollama serve` running locally, model pulled,
+    e.g. `ollama pull qwen2.5:7b`.
+  - **LM Studio**: local server started (Developer tab > Start Server,
+    default port 1234) with a model loaded; pass `--backend lmstudio`.
+
+Only one backend needs to run at a time — pick one with `--backend`.
 
 ## Usage
 
@@ -54,8 +60,13 @@ python3 ~/.claude/skills/local-context-filter/filter.py --grep "ServiceOrder"
 # same, case-insensitive, scoped to a subfolder
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "todo" --ignore-case --input app
 
-# LLM-filter a big file/dir down to what matters
+# LLM-filter a big file/dir down to what matters (Ollama, default)
 python3 ~/.claude/skills/local-context-filter/filter.py \
+  --task "find the root cause of the timeout" --input server.log --max-words 200
+
+# same, via LM Studio
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --backend lmstudio \
   --task "find the root cause of the timeout" --input server.log --max-words 200
 
 # grep first, then let the local model narrow a noisy match list
@@ -102,11 +113,11 @@ preference explicit and consistent instead of judgment-call-by-judgment-call.
 
 ## TODO
 
-- [ ] Support [LM Studio](https://lmstudio.ai) (OpenAI-compatible local
+- [x] Support [LM Studio](https://lmstudio.ai) (OpenAI-compatible local
       server) as an alternative backend to Ollama.
 - [ ] Support other local runtimes generically (llama.cpp server, vLLM, any
-      OpenAI-compatible `/v1/chat/completions` endpoint) via a `--backend`
-      flag instead of hardcoding Ollama's `/api/generate`.
+      OpenAI-compatible `/v1/chat/completions` endpoint) via `--backend` +
+      `--host` instead of a fixed `ollama`/`lmstudio` choice.
 
 ## License
 

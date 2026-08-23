@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Filter/summarize raw content via local Ollama model, keeping only what's relevant to a task.
+"""Filter/summarize raw content via a local LLM, keeping only what's relevant to a task.
 
 Usage:
-  python3 filter.py --task "TASK" --input FILE_OR_DIR [--model qwen2.5:7b] [--max-words N]
+  python3 filter.py --task "TASK" --input FILE_OR_DIR [--backend ollama|lmstudio] [--model TAG] [--max-words N]
   cat file | python3 filter.py --task "TASK"
   python3 filter.py --grep PATTERN [--input DIR] [--task "TASK"]
 
@@ -16,6 +16,10 @@ involved, cheapest and most precise option for exact-pattern search. Add
 --task on top of --grep to additionally have the local model narrow a large
 match list down to what's relevant to that task.
 
+--backend selects the local server: "ollama" (default, http://localhost:11434)
+or "lmstudio" (OpenAI-compatible, http://localhost:1234). Override the host
+with --host.
+
 Prints the filtered content to stdout. Nothing else goes to stdout.
 """
 import argparse
@@ -26,11 +30,17 @@ import sys
 import urllib.request
 import urllib.error
 
-OLLAMA_HOST = "http://localhost:11434"
-OLLAMA_URL = f"{OLLAMA_HOST}/api/generate"
 ROOT = os.path.realpath(os.getcwd())
 EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__", ".next", "coverage"}
 MAX_GREP_MATCHES = 500
+
+DEFAULT_HOSTS = {
+    "ollama": "http://localhost:11434",
+    "lmstudio": "http://localhost:1234",
+}
+DEFAULT_MODELS = {
+    "ollama": "qwen2.5:7b",
+}
 
 SYSTEM_PROMPT = (
     "You are a context filter. You receive a TASK and RAW_CONTENT. "
@@ -41,15 +51,33 @@ SYSTEM_PROMPT = (
 )
 
 
-def check_ollama_running(model):
+def list_models(backend, host):
+    """Return the set of model names/ids currently available on the backend."""
+    url = f"{host}/api/tags" if backend == "ollama" else f"{host}/v1/models"
     try:
-        with urllib.request.urlopen(f"{OLLAMA_HOST}/api/tags", timeout=3) as resp:
+        with urllib.request.urlopen(url, timeout=3) as resp:
             data = json.loads(resp.read())
     except urllib.error.URLError:
-        sys.exit(f"error: Ollama not reachable at {OLLAMA_HOST}. Start it with `ollama serve`.")
-    names = {m.get("name") for m in data.get("models", [])}
-    if model not in names:
-        sys.exit(f"error: model '{model}' not pulled. Run `ollama pull {model}` (available: {', '.join(sorted(names)) or 'none'}).")
+        start_hint = "`ollama serve`" if backend == "ollama" else "LM Studio's local server (Developer tab > Start Server)"
+        sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint}.")
+    if backend == "ollama":
+        return {m.get("name") for m in data.get("models", [])}
+    return {m.get("id") for m in data.get("data", [])}
+
+
+def resolve_model(backend, host, model):
+    """Validate an explicit --model, or auto-pick one when none was given."""
+    names = list_models(backend, host)
+    if model:
+        if model not in names:
+            fix = f"`ollama pull {model}`" if backend == "ollama" else "load it in LM Studio first"
+            sys.exit(f"error: model '{model}' not available on {backend}. {fix} (available: {', '.join(sorted(names)) or 'none'}).")
+        return model
+    if backend in DEFAULT_MODELS and DEFAULT_MODELS[backend] in names:
+        return DEFAULT_MODELS[backend]
+    if names:
+        return sorted(names)[0]
+    sys.exit(f"error: no models available on {backend} at {host}.")
 
 
 def confine_to_root(path):
@@ -127,7 +155,7 @@ MAX_CONTENT_CHARS = 24000  # ~6k tokens; keeps prompt+content under num_ctx belo
 NUM_CTX = 8192
 
 
-def call_ollama(model, task, content, max_words):
+def call_llm(backend, host, model, task, content, max_words):
     if len(content) > MAX_CONTENT_CHARS:
         print(
             f"warning: input is {len(content)} chars, truncating to {MAX_CONTENT_CHARS} "
@@ -135,27 +163,57 @@ def call_ollama(model, task, content, max_words):
             file=sys.stderr,
         )
         content = content[:MAX_CONTENT_CHARS]
-    prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"TASK: {task}\n\n"
-        f"Keep the output under {max_words} words.\n\n"
-        f"RAW_CONTENT:\n{content}"
-    )
-    payload = json.dumps({
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"num_ctx": NUM_CTX, "temperature": 0.2},
-    }).encode("utf-8")
+
+    if backend == "ollama":
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"TASK: {task}\n\n"
+            f"Keep the output under {max_words} words.\n\n"
+            f"RAW_CONTENT:\n{content}"
+        )
+        url = f"{host}/api/generate"
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"num_ctx": NUM_CTX, "temperature": 0.2},
+        }
+    else:  # lmstudio: OpenAI-compatible chat completions
+        url = f"{host}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"TASK: {task}\n\nKeep the output under {max_words} words.\n\nRAW_CONTENT:\n{content}"
+                    ),
+                },
+            ],
+            "temperature": 0.2,
+            "stream": False,
+        }
+
     req = urllib.request.Request(
-        OLLAMA_URL, data=payload, headers={"Content-Type": "application/json"}
+        url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
             data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            body = json.loads(body).get("error", {}).get("message", body)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        sys.exit(f"error: {backend} at {url} returned {e.code}: {body}")
     except urllib.error.URLError as e:
-        sys.exit(f"error: cannot reach Ollama at {OLLAMA_URL} ({e}). Is `ollama serve` running?")
-    return data.get("response", "").strip()
+        sys.exit(f"error: cannot reach {backend} at {url} ({e}).")
+
+    if backend == "ollama":
+        return data.get("response", "").strip()
+    return data["choices"][0]["message"]["content"].strip()
 
 
 def main():
@@ -164,9 +222,12 @@ def main():
     ap.add_argument("--input", help="file or directory to filter/search (recursive); omit to read stdin")
     ap.add_argument("--grep", metavar="PATTERN", help="exact regex search (like grep -rn) under --input, no LLM")
     ap.add_argument("--ignore-case", action="store_true", help="case-insensitive --grep")
-    ap.add_argument("--model", default="qwen2.5:7b", help="Ollama model tag (default: qwen2.5:7b)")
+    ap.add_argument("--backend", choices=["ollama", "lmstudio"], default="ollama", help="local LLM server (default: ollama)")
+    ap.add_argument("--host", help="override backend host (default: ollama=http://localhost:11434, lmstudio=http://localhost:1234)")
+    ap.add_argument("--model", help="model tag/id; default: qwen2.5:7b on ollama, first loaded model on lmstudio")
     ap.add_argument("--max-words", type=int, default=300, help="target max words of output (default: 300)")
     args = ap.parse_args()
+    host = args.host or DEFAULT_HOSTS[args.backend]
 
     if args.grep:
         root = confine_to_root(args.input) if args.input else ROOT
@@ -177,16 +238,16 @@ def main():
         if not args.task:
             print("\n".join(matches))
             return
-        check_ollama_running(args.model)
-        result = call_ollama(args.model, args.task, "\n".join(matches), args.max_words)
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm(args.backend, host, model, args.task, "\n".join(matches), args.max_words)
         print(result)
         return
 
     if not args.task:
         ap.error("--task is required unless --grep is used")
-    check_ollama_running(args.model)
+    model = resolve_model(args.backend, host, args.model)
     content = read_input(args.input)
-    result = call_ollama(args.model, args.task, content, args.max_words)
+    result = call_llm(args.backend, host, model, args.task, content, args.max_words)
     print(result)
 
 

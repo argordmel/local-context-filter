@@ -303,6 +303,7 @@ needs to be running to pass.
 | Project excludes (`.claude/local-context-filter.json`) | `TestProjectExcludes` (all cases), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
 | `--count` single file, directory + `TOTAL`, empty dir sentinel | `TestCLIEndToEnd.test_count_single_file`, `test_count_directory_includes_total`, `test_count_empty_dir_prints_sentinel` |
 | `--count` mutually exclusive with `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |
+| `--count` matches real `wc -l` on files with/without a trailing newline, empty file | `TestCLIEndToEnd.test_count_matches_real_wc_l_without_trailing_newline`, `test_count_empty_file_is_zero` |
 | `--run` rejects non-allowed binaries | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
 | `--run` executes allowed binary, prints output | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutually exclusive with `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |

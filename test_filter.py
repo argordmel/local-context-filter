@@ -886,6 +886,19 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "NO_ENTRIES")
 
+    def test_count_matches_real_wc_l_without_trailing_newline(self):
+        full = self.write("a.txt", "l1\nl2\nl3")  # no trailing newline
+        result = self.run_cli("--count", "--input", "a.txt")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "2 a.txt")
+        real_wc = subprocess.run(["wc", "-l", full], capture_output=True, text=True, check=True)
+        self.assertEqual(int(real_wc.stdout.split()[0]), 2)
+
+    def test_count_empty_file_is_zero(self):
+        self.write("empty.txt", "")
+        result = self.run_cli("--count", "--input", "empty.txt")
+        self.assertEqual(result.stdout.strip(), "0 empty.txt")
+
     def test_run_rejects_non_allowed_binary(self):
         result = self.run_cli("--run", "rm -rf /")
         self.assertNotEqual(result.returncode, 0)

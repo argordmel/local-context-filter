@@ -313,6 +313,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | Excludes de proyecto (`.claude/local-context-filter.json`) | `TestProjectExcludes` (todos los casos), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
 | `--count` archivo único, directorio + `TOTAL`, sentinel dir vacío | `TestCLIEndToEnd.test_count_single_file`, `test_count_directory_includes_total`, `test_count_empty_dir_prints_sentinel` |
 | `--count` mutuamente excluyente con `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |
+| `--count` coincide con `wc -l` real, con/sin newline final, archivo vacío | `TestCLIEndToEnd.test_count_matches_real_wc_l_without_trailing_newline`, `test_count_empty_file_is_zero` |
 | `--run` rechaza binarios no permitidos | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
 | `--run` ejecuta binario permitido, imprime salida | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutuamente excluyente con `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |

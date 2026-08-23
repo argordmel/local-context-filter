@@ -214,10 +214,11 @@ python3 ~/.claude/skills/local-context-filter/filter.py --count --input filter.p
 python3 ~/.claude/skills/local-context-filter/filter.py --count
 ```
 
-Counts lines per file, like `wc -l`. `--input` a single file prints one
-`N path` line; `--input` a directory (default: cwd) recurses, same
-confinement/exclusion rules as `--grep`/`--ls`/`--find`, and appends an
-`N TOTAL` line. No file content is included in the output, only counts.
+Counts lines per file, like `wc -l` — counts newline characters, exactly
+matching real `wc -l` even on a file with no trailing newline (`N-1`, not
+`N`). `--input` a single file prints one `N path` line; `--input` a
+directory (default: cwd) recurses, same confinement/exclusion rules as
+`--grep`/`--ls`/`--find`, and appends an `N TOTAL` line. No file content is included in the output, only counts.
 Prints `NO_ENTRIES` if the directory has no readable text files. Add
 `--task` to have the local model narrow a large listing down to what's
 relevant. Mutually exclusive with `--grep`/`--diff`/`--ls`/`--find`/`--run`.

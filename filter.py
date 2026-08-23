@@ -443,10 +443,12 @@ def count_lines(root, excluded_dirs=None):
 
     def line_count(path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return sum(1 for _ in f)
+            with open(path, "rb") as f:
+                content = f.read()
+            content.decode("utf-8")
         except (UnicodeDecodeError, OSError):
             return None
+        return content.count(b"\n")
 
     if os.path.isfile(root):
         n = line_count(root)

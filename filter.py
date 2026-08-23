@@ -418,15 +418,18 @@ def generate_report(log_path):
     if not os.path.exists(log_path):
         return "NO_USAGE_DATA"
     entries = []
-    with open(log_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except (OSError, UnicodeDecodeError):
+        return "NO_USAGE_DATA"
     if not entries:
         return "NO_USAGE_DATA"
 
@@ -463,7 +466,7 @@ def rotate_usage_log_if_needed(path):
         if len(lines) > USAGE_LOG_TRIM_TRIGGER:
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(lines[-USAGE_LOG_KEEP_LINES:])
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pass
 
 

@@ -310,6 +310,9 @@ tokens_saved_est}`. No file contents, paths, or `--task` text are recorded
 tokenizer — good for trend, not exact accounting. Override the location
 with `LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; a write failure (e.g.
 read-only disk) is silently ignored and never breaks the actual command.
+A corrupted or badly-encoded log (e.g. `LOCAL_CONTEXT_FILTER_LOG` pointed
+at a non-text file) is handled the same way — `--report` prints
+`NO_USAGE_DATA` instead of crashing.
 
 Self-maintaining: once the log passes 6000 lines it's automatically
 trimmed down to the most recent 5000, so it never grows unbounded — no

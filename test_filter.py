@@ -291,6 +291,11 @@ class TestGenerateReport(TempRepoTestCase):
         open(flt.LOG_PATH, "w").close()
         self.assertEqual(flt.generate_report(flt.LOG_PATH), "NO_USAGE_DATA")
 
+    def test_invalid_encoding_returns_sentinel_not_traceback(self):
+        with open(flt.LOG_PATH, "wb") as f:
+            f.write(b"\xff\xfe{\"ts\":\"x\"}\n")
+        self.assertEqual(flt.generate_report(flt.LOG_PATH), "NO_USAGE_DATA")
+
     def test_aggregates_by_mode(self):
         flt.log_usage("grep", None, 100, 20)
         flt.log_usage("grep", None, 200, 40)
@@ -354,6 +359,12 @@ class TestLogUsage(TempRepoTestCase):
 class TestRotateUsageLog(TempRepoTestCase):
     def test_missing_file_is_a_noop(self):
         flt.rotate_usage_log_if_needed(os.path.join(self.tmpdir, "does-not-exist.json"))  # should not raise
+
+    def test_invalid_encoding_is_a_noop_not_a_traceback(self):
+        path = os.path.join(self.tmpdir, "usage.json")
+        with open(path, "wb") as f:
+            f.write(b"\xff\xfe{\"n\":1}\n")
+        flt.rotate_usage_log_if_needed(path)  # should not raise
 
     def test_trims_to_keep_lines_when_over_trigger(self):
         path = os.path.join(self.tmpdir, "usage.json")

@@ -16,8 +16,13 @@ A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter
 - **`--diff`** — filters `git diff HEAD` at cwd (or scoped to `--input`);
   raw diff (free) without `--task`, or model-filtered with it.
 - **`--ls`** — recursively lists files/dirs under `--input` (default: cwd),
-  no LLM, zero Claude tokens; use instead of `bash ls`/`find` for exploring
+  no LLM, zero Claude tokens; use instead of `bash ls`/`tree` for exploring
   project structure.
+- **`--find`** — finds files/dirs by basename glob (like `find -iname`), no
+  LLM, zero Claude tokens; use instead of `bash find` for locating a file
+  by name.
+- **`--report` / `--clean`** — read or wipe the local usage log
+  (`usage.json`) that tracks estimated tokens saved over time.
 
 Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
 or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
@@ -122,6 +127,16 @@ python3 ~/.claude/skills/local-context-filter/filter.py --ls
 
 # same, scoped to a subfolder
 python3 ~/.claude/skills/local-context-filter/filter.py --ls --input app/config
+
+# find a file by basename glob, no LLM, no Claude tokens
+python3 ~/.claude/skills/local-context-filter/filter.py --find "*.log"
+
+# same, case-insensitive
+python3 ~/.claude/skills/local-context-filter/filter.py --find "readme*" --ignore-case
+
+# usage summary / wipe the local usage log
+python3 ~/.claude/skills/local-context-filter/filter.py --report
+python3 ~/.claude/skills/local-context-filter/filter.py --clean
 ```
 
 Full flag reference and behavior notes: [SKILL.md](SKILL.md).
@@ -144,7 +159,7 @@ For exact string/regex search in a project, prefer the `local-context-filter` sk
 
 For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
 
-Never run `bash ls`, `find`, or `tree` to explore a project's file/directory structure (listing a folder, finding a file by name) — always use the same skill's `--ls` mode instead. It's free, zero Claude context tokens, same as `--grep`. This applies even to a simple one-off "list the files in X" request — don't reach for Bash out of habit.
+Never run `bash ls`, `find`, or `tree` to explore a project's file/directory structure — always use the same skill's `--ls` mode to list a folder, or `--find` to locate a file by name. Both are free, zero Claude context tokens, same as `--grep`. This applies even to a simple one-off "list the files in X" request — don't reach for Bash out of habit.
 ```
 
 Without that instruction, Claude will still *discover* the skill via its
@@ -160,6 +175,18 @@ chars_in, chars_out, tokens_saved_est}` — no file contents, paths, or
 tokenizer, useful as a trend, not an exact figure. Override the path with
 `LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; if it can't be written, the run
 still succeeds — logging failures are silent and never block the command.
+`--report` prints totals (by mode); `--clean` deletes the log.
+
+## Project-level excludes
+
+`--grep`, `--ls`, and `--find` skip `.git`, `node_modules`, `dist`,
+`build`, `.venv`, `__pycache__`, `.next`, `coverage` by default. To skip
+more directories in one project without editing the skill, add
+`.claude/local-context-filter.json` at the project root:
+
+```json
+{"exclude": ["fixtures", "vendor"]}
+```
 
 ## Safety
 
@@ -167,12 +194,13 @@ still succeeds — logging failures are silent and never block the command.
   subdirectories freely but can never resolve above the directory you ran
   the command from — `../`, absolute paths outside it, and symlinks
   pointing out are all rejected.
-- `--grep` and `--ls` auto-skip `.git`, `node_modules`, `dist`, `build`,
-  `.venv`, `__pycache__`, `.next`, `coverage`; `--grep` also caps at 500
-  matches.
-- The LLM-filter mode truncates input over ~24k chars (with a stderr
-  warning) to stay inside the model's context window — split large
-  directory scans into smaller runs instead of one pass over everything.
+- `--grep`, `--ls`, and `--find` auto-skip `.git`, `node_modules`, `dist`,
+  `build`, `.venv`, `__pycache__`, `.next`, `coverage` (plus any project
+  excludes above); `--grep` and `--find` also cap at 500 matches.
+- The LLM-filter mode splits input over ~24k chars into sequential chunks
+  and filters each separately (a stderr warning names the chunk count) —
+  nothing is dropped, it just takes one LLM call per chunk instead of one
+  total.
 
 ## Tests
 
@@ -204,6 +232,15 @@ needs to be running to pass.
 | `--ls` scoped to `--input` | `TestCLIEndToEnd.test_ls_scoped_to_input` |
 | `--ls` non-directory `--input` → error | `TestListTree.test_non_directory_exits` |
 | `--ls` mutually exclusive with `--grep`/`--diff` | `TestCLIEndToEnd.test_ls_and_grep_mutually_exclusive`, `test_ls_and_diff_mutually_exclusive` |
+| `--find` matches basenames by glob, `--ignore-case` | `TestFindSearch.test_finds_files_by_glob`, `test_ignore_case`, `TestCLIEndToEnd.test_find_prints_matches` |
+| `--find` no matches → `NO_MATCHES` | `TestCLIEndToEnd.test_find_no_matches_prints_sentinel` |
+| `--find` skips excluded dirs, custom excludes | `TestFindSearch.test_skips_excluded_dirs`, `test_custom_excluded_dirs` |
+| `--find` mutually exclusive with `--grep` | `TestCLIArgGating.test_find_and_grep_mutually_exclusive` |
+| Project excludes (`.claude/local-context-filter.json`) | `TestProjectExcludes` (all cases), `TestCLIEndToEnd.test_find_respects_project_excludes_config` |
+| `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
+| `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
+| `--clean` deletes usage.json, idempotent | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |
+| Oversized `--task` input chunked (not truncated), results joined | `TestCallLLMChunked` (all cases) |
 | Path confinement (`../`, absolute, symlink escape) | `TestConfineToRoot` (all cases, incl. `test_symlink_pointing_outside_root_rejected`) |
 | `--task` reading a file / directory / stdin | `TestReadInput`, `TestReadDirectory` |
 | `--task` with no `--input` and no stdin → error | `TestReadInput.test_no_input_and_no_stdin_exits` |
@@ -224,8 +261,13 @@ needs to be running to pass.
 - [x] Support other local runtimes generically (llama.cpp server, vLLM, any
       OpenAI-compatible `/v1/chat/completions` endpoint) via `--backend openai`
       + `--host`.
-- [x] Support directory listing (`--ls`, `ls`/`find`-style) at zero Claude
+- [x] Support directory listing (`--ls`, `ls`-style) at zero Claude
       token cost.
+- [x] Support filename search (`--find`, `find -iname`-style glob) at zero
+      Claude token cost.
+- [x] Local-only usage log (`usage.json`) with `--report`/`--clean`.
+- [x] Chunk oversized `--task` input instead of truncating it.
+- [x] Per-project extra excludes via `.claude/local-context-filter.json`.
 
 ## License
 

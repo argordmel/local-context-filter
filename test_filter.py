@@ -119,6 +119,83 @@ class TestGrepSearch(TempRepoTestCase):
         self.assertEqual(stats["chars_scanned"], len("const ServiceOrder = 1;\n") + len("const other = 2;\n"))
 
 
+class TestFindSearch(TempRepoTestCase):
+    def test_finds_files_by_glob(self):
+        self.write("src/app.js", "x")
+        self.write("README.md", "x")
+        matches = flt.find_search(flt.ROOT, "*.js")
+        self.assertEqual(matches, ["src/app.js"])
+
+    def test_finds_dirs_with_trailing_slash(self):
+        self.write("fixtures/dump.js", "x")
+        matches = flt.find_search(flt.ROOT, "fixtures")
+        self.assertIn("fixtures/", matches)
+
+    def test_ignore_case(self):
+        self.write("README.md", "x")
+        self.assertEqual(flt.find_search(flt.ROOT, "readme*"), [])
+        self.assertEqual(flt.find_search(flt.ROOT, "readme*", ignore_case=True), ["README.md"])
+
+    def test_skips_excluded_dirs(self):
+        self.write("node_modules/pkg.js", "x")
+        self.write("src/app.js", "x")
+        matches = flt.find_search(flt.ROOT, "*.js")
+        self.assertEqual(matches, ["src/app.js"])
+
+    def test_custom_excluded_dirs(self):
+        self.write("fixtures/dump.js", "x")
+        self.write("src/app.js", "x")
+        matches = flt.find_search(flt.ROOT, "*.js", excluded_dirs={"fixtures"})
+        self.assertEqual(matches, ["src/app.js"])
+
+    def test_no_matches_returns_empty_list(self):
+        self.write("README.md", "x")
+        self.assertEqual(flt.find_search(flt.ROOT, "*.js"), [])
+
+
+class TestProjectExcludes(TempRepoTestCase):
+    def test_no_config_returns_empty_set(self):
+        self.assertEqual(flt.load_project_excludes(flt.ROOT), set())
+
+    def test_reads_exclude_list(self):
+        self.write(".claude/local-context-filter.json", json.dumps({"exclude": ["fixtures", "vendor"]}))
+        self.assertEqual(flt.load_project_excludes(flt.ROOT), {"fixtures", "vendor"})
+
+    def test_invalid_json_returns_empty_set(self):
+        self.write(".claude/local-context-filter.json", "not json")
+        self.assertEqual(flt.load_project_excludes(flt.ROOT), set())
+
+    def test_non_list_exclude_returns_empty_set(self):
+        self.write(".claude/local-context-filter.json", json.dumps({"exclude": "fixtures"}))
+        self.assertEqual(flt.load_project_excludes(flt.ROOT), set())
+
+
+class TestGenerateReport(TempRepoTestCase):
+    def test_no_log_file_returns_sentinel(self):
+        self.assertEqual(flt.generate_report(flt.LOG_PATH), "NO_USAGE_DATA")
+
+    def test_empty_log_file_returns_sentinel(self):
+        open(flt.LOG_PATH, "w").close()
+        self.assertEqual(flt.generate_report(flt.LOG_PATH), "NO_USAGE_DATA")
+
+    def test_aggregates_by_mode(self):
+        flt.log_usage("grep", None, 100, 20)
+        flt.log_usage("grep", None, 200, 40)
+        flt.log_usage("ls", None, 10, 10)
+        report = flt.generate_report(flt.LOG_PATH)
+        self.assertIn("3 runs", report)
+        self.assertIn("grep", report)
+        self.assertIn("2 runs", report)
+        self.assertIn("Total tokens saved (est.): 60", report)
+
+    def test_skips_malformed_lines(self):
+        with open(flt.LOG_PATH, "w", encoding="utf-8") as f:
+            f.write("not json\n")
+            f.write(json.dumps({"ts": "t", "mode": "grep", "chars_in": 100, "chars_out": 20, "tokens_saved_est": 20}) + "\n")
+        report = flt.generate_report(flt.LOG_PATH)
+        self.assertIn("1 runs", report)
+
+
 class TestLogUsage(TempRepoTestCase):
     def test_appends_one_json_line_with_expected_fields(self):
         flt.log_usage("grep", None, 100, 20)
@@ -359,6 +436,66 @@ class TestCallLLM(unittest.TestCase):
         self.assertIn("cannot reach ollama", str(ctx.exception))
 
 
+class TestCallLLMChunked(unittest.TestCase):
+    def _fake_response(self, payload):
+        body = json.dumps(payload).encode("utf-8")
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(body)
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_small_content_makes_single_call(self):
+        calls = []
+
+        def fake_urlopen(req, timeout=120):
+            calls.append(json.loads(req.data))
+            return self._fake_response({"response": "ok"})
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            out = flt.call_llm_chunked("ollama", "http://x", "qwen2.5:7b", "task", "small", 100)
+        self.assertEqual(out, "ok")
+        self.assertEqual(len(calls), 1)
+
+    def test_oversized_content_splits_into_multiple_calls_and_joins_results(self):
+        big = "x" * (flt.MAX_CONTENT_CHARS * 2 + 100)
+        prompts = []
+
+        def fake_urlopen(req, timeout=120):
+            body = json.loads(req.data)
+            prompts.append(body["prompt"])
+            return self._fake_response({"response": f"chunk-result-{len(prompts)}"})
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with mock.patch("sys.stderr", new_callable=io.StringIO):
+                out = flt.call_llm_chunked("ollama", "http://x", "qwen2.5:7b", "task", big, 100)
+        self.assertEqual(len(prompts), 3)
+        self.assertIn("chunk-result-1", out)
+        self.assertIn("chunk-result-3", out)
+
+    def test_no_relevant_content_chunks_are_dropped(self):
+        big = "x" * (flt.MAX_CONTENT_CHARS + 100)
+        responses = iter(["NO_RELEVANT_CONTENT", "found it"])
+
+        def fake_urlopen(req, timeout=120):
+            return self._fake_response({"response": next(responses)})
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with mock.patch("sys.stderr", new_callable=io.StringIO):
+                out = flt.call_llm_chunked("ollama", "http://x", "qwen2.5:7b", "task", big, 100)
+        self.assertEqual(out, "found it")
+
+    def test_all_chunks_irrelevant_returns_sentinel(self):
+        big = "x" * (flt.MAX_CONTENT_CHARS + 100)
+
+        def fake_urlopen(req, timeout=120):
+            return self._fake_response({"response": "NO_RELEVANT_CONTENT"})
+
+        with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with mock.patch("sys.stderr", new_callable=io.StringIO):
+                out = flt.call_llm_chunked("ollama", "http://x", "qwen2.5:7b", "task", big, 100)
+        self.assertEqual(out, "NO_RELEVANT_CONTENT")
+
+
 class TestCLIArgGating(unittest.TestCase):
     SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "filter.py")
 
@@ -402,6 +539,38 @@ class TestCLIArgGating(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("mutually exclusive", result.stderr)
+
+    def test_find_and_grep_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--find", "*.js", "--grep", "x"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
+
+    def test_report_and_grep_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--report", "--grep", "x"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--report cannot be combined", result.stderr)
+
+    def test_clean_and_ls_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--clean", "--ls"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--clean cannot be combined", result.stderr)
+
+    def test_clean_and_report_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--clean", "--report"],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--clean cannot be combined", result.stderr)
 
 
 class TestReadInput(TempRepoTestCase):
@@ -507,6 +676,50 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("b.txt", result.stdout)
         self.assertNotIn("a.txt", result.stdout)
+
+    def test_find_prints_matches(self):
+        self.write("src/app.js", "x")
+        self.write("README.md", "x")
+        result = self.run_cli("--find", "*.js")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "src/app.js")
+
+    def test_find_no_matches_prints_sentinel(self):
+        self.write("README.md", "x")
+        result = self.run_cli("--find", "*.js")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_MATCHES")
+
+    def test_find_respects_project_excludes_config(self):
+        self.write("fixtures/dump.js", "x")
+        self.write("src/app.js", "x")
+        self.write(".claude/local-context-filter.json", json.dumps({"exclude": ["fixtures"]}))
+        result = self.run_cli("--find", "*.js")
+        self.assertEqual(result.stdout.strip(), "src/app.js")
+
+    def test_report_no_data_prints_sentinel(self):
+        result = self.run_cli("--report")
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "NO_USAGE_DATA")
+
+    def test_report_after_usage_shows_totals(self):
+        self.write("a.js", "const ServiceOrder = 1;\n")
+        self.run_cli("--grep", "ServiceOrder")
+        result = self.run_cli("--report")
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("1 runs", result.stdout)
+        self.assertIn("grep", result.stdout)
+
+    def test_clean_removes_log_and_is_idempotent(self):
+        self.write("a.js", "const ServiceOrder = 1;\n")
+        self.run_cli("--grep", "ServiceOrder")
+        log_path = os.path.join(self.tmpdir, "usage.json")
+        self.assertTrue(os.path.exists(log_path))
+        result = self.run_cli("--clean")
+        self.assertEqual(result.stdout.strip(), "USAGE_LOG_CLEARED")
+        self.assertFalse(os.path.exists(log_path))
+        result = self.run_cli("--clean")
+        self.assertEqual(result.stdout.strip(), "NO_USAGE_DATA")
 
 
 class TestReadDirectory(TempRepoTestCase):

@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style) across the current project, or to list a project's file/directory tree (ls/find-style), without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), or to find a file by name (glob, `--find`), all without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -23,9 +23,10 @@ compact result — that's what goes into Claude's context, not the raw blob.
   cheaper and more precise than the LLM-filter mode for this
 - Reviewing/summarizing the current working tree changes (`--diff`, see
   below) without pasting a large `git diff` into the conversation
-- Listing a directory tree / finding a file by name (`--ls`, see below) —
-  use this instead of `bash ls`/`find` so path exploration also costs zero
-  Claude tokens
+- Listing a directory tree (`--ls`, see below) — use this instead of
+  `bash ls`/`tree` so path exploration also costs zero Claude tokens
+- Finding a file by name (`--find`, see below) — use this instead of
+  `bash find`/`find -iname` for the same reason
 
 **Don't use** the LLM-filter mode (`--task` without `--grep`) for content
 that's already small, or when you need the exact full content verbatim
@@ -179,6 +180,35 @@ relevant:
 python3 ~/.claude/skills/local-context-filter/filter.py --ls --input app --task "which files look auth-related"
 ```
 
+### Filename search (`--find`) — no LLM, no context cost
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --find "*.log"
+python3 ~/.claude/skills/local-context-filter/filter.py --find "README*" --ignore-case
+```
+
+Finds files/dirs whose **basename** matches a glob pattern — like
+`find -iname`, not a content search (use `--grep` for content). Rooted at
+`--input` (default: cwd), same confinement/exclusion rules as `--grep`/
+`--ls`. Directories print with a trailing `/`. Prints `NO_MATCHES` if
+nothing matches, caps at 500 like `--grep`. Add `--ignore-case` for
+case-insensitive matching, `--task` to have the local model narrow a large
+match list. Mutually exclusive with `--grep`/`--diff`/`--ls`.
+
+### Project-level excludes (`.claude/local-context-filter.json`)
+
+`--grep`, `--ls`, and `--find` skip `.git`, `node_modules`, `dist`,
+`build`, `.venv`, `__pycache__`, `.next`, `coverage` by default. To skip
+more directories for one project without touching the skill itself, drop
+a JSON file at `<project root>/.claude/local-context-filter.json`:
+
+```json
+{"exclude": ["fixtures", "vendor"]}
+```
+
+Read fresh on every run, from the directory you ran the command from —
+no flag needed once it's there.
+
 ### Real cost example
 
 Measured on a mid-size project, searching for `ServiceOrder` under `app/`
@@ -203,10 +233,13 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--ignore-case` | off | case-insensitive `--grep` |
 | `--diff` | off | filter `git diff HEAD` at cwd, or scoped to `--input` if given; no-LLM without `--task` |
 | `--ls` | off | recursively list files/dirs under `--input` (default: cwd); no-LLM without `--task` |
+| `--find` | — | glob pattern for basename search (like `find -iname`); no-LLM without `--task` |
+| `--report` | off | print a usage.json summary (total runs, tokens saved by mode); cannot combine with anything else |
+| `--clean` | off | delete usage.json; cannot combine with anything else |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |
 | `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`); **required** for `--backend openai` |
 | `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |
-| `--max-words` | 300 | target size of filtered output |
+| `--max-words` | 300 | target size of filtered output (applies per-chunk when content is split, see below) |
 
 ## Usage log (local, private)
 
@@ -219,6 +252,19 @@ tokenizer — good for trend, not exact accounting. Override the location
 with `LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; a write failure (e.g.
 read-only disk) is silently ignored and never breaks the actual command.
 
+Two flags read/manage it directly, no LLM involved:
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --report
+python3 ~/.claude/skills/local-context-filter/filter.py --clean
+```
+
+`--report` prints total runs and estimated tokens saved, broken down by
+mode; prints `NO_USAGE_DATA` if the log is empty/missing. `--clean`
+deletes the log file (prints `USAGE_LOG_CLEARED`, or `NO_USAGE_DATA` if
+there was nothing to delete) — use it to reset the count or just to keep
+the file from growing unbounded.
+
 ## Common Mistakes
 
 - Backend down or model not available — script now catches this upfront
@@ -227,8 +273,10 @@ read-only disk) is silently ignored and never breaks the actual command.
   stop one before starting the other.
 - Vague `--task` ("summarize this") — the filter quality depends entirely
   on task specificity. "find the auth-related error" beats "look at this".
-- Very large directories — content over ~24k chars gets truncated (warning
-  on stderr) to fit the model's context window; split big directory scans
-  into smaller subfolder runs instead of one pass over everything.
+- Very large content (over ~24k chars) — automatically split into
+  sequential chunks and each filtered separately (a stderr warning names
+  the chunk count), so nothing is silently dropped; it's just several LLM
+  calls instead of one, so it takes longer. No action needed, but expect
+  the wait on huge directories/diffs.
 - Using it on code you intend to edit — prefer reading the real file
   directly when exact content/formatting matters.

@@ -69,8 +69,10 @@ Pick one backend — both aren't meant to run at once (RAM):
   override.
 - **LM Studio**: local server started (Developer tab > Start Server,
   default `http://localhost:1234`) with a model loaded. Pass
-  `--backend lmstudio`; `--model` optional (defaults to the first loaded
-  model).
+  `--backend lmstudio`; without `--model`, it auto-picks whatever model
+  is currently loaded (via LM Studio's `/api/v0/models`, which exposes
+  load state — plain `/v1/models` lists every downloaded model regardless
+  of load state, so it can't be used for this).
 - **Any other OpenAI-compatible server** (llama.cpp server, vLLM, etc.):
   `--backend openai --host http://host:port` — `--host` is required, no
   conventional default port to assume. `--model` optional (defaults to

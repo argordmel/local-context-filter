@@ -75,11 +75,17 @@ uses that — no extra load time, always matches your actual setup. Falls
 back to `qwen2.5:7b` if pulled, else alphabetically first pulled model, if
 nothing is currently loaded.
 
-**No hardcoded default model for LM Studio/openai.** Without `--model`,
-LM Studio and openai always pick whichever model sorts first
-alphabetically among what `/v1/models` reports — not a "preferred" model,
-just alphabetical order on whatever happens to be loaded on your machine.
-Pass `--model` explicitly if you want a specific one.
+**LM Studio auto-picks the model you're already running.** Without
+`--model`, it checks LM Studio's own `/api/v0/models` (which exposes a
+`state: loaded/not-loaded` field per model) and uses the loaded one —
+plain `/v1/models` lists every *downloaded* model regardless of load
+state, so it can't answer this. Falls back to the first `/v1/models`
+entry if nothing is loaded or the state check fails.
+
+**No hardcoded default model for generic openai backend.** Without
+`--model`, it picks the first model in the order `/v1/models` reports —
+there's no standard way to ask a generic OpenAI-compatible server which
+model is "loaded". Pass `--model` explicitly if you want a specific one.
 
 Only one backend needs to run at a time — pick one with `--backend`.
 
@@ -303,8 +309,9 @@ needs to be running to pass.
 | LM Studio backend: list models, chat completions | `TestListModels.test_lmstudio_parses_ids`, `TestCallLLM.test_lmstudio_returns_message_content` |
 | Generic `openai` backend | `TestListModels.test_openai_parses_ids_same_shape_as_lmstudio`, `TestCallLLM.test_openai_backend_uses_chat_completions_shape` |
 | `--backend openai` requires `--host` | `TestCLIArgGating.test_openai_backend_without_host_errors` |
-| Model auto-resolution (currently-loaded ollama model, default, alphabetical fallback) | `TestResolveModel` (all cases) |
+| Model auto-resolution (currently-loaded ollama/lmstudio model, default, fallbacks) | `TestResolveModel` (all cases) |
 | Currently-loaded Ollama model detection (`/api/ps`) | `TestRunningOllamaModel` (all cases) |
+| Currently-loaded LM Studio model detection (`/api/v0/models`) | `TestRunningLmstudioModel` (all cases) |
 | Explicit `--model` validated against what's available | `TestResolveModel.test_explicit_model_available_returned`, `test_explicit_model_missing_exits`, `test_openai_explicit_model_missing_exits` |
 | Backend unreachable → clear per-backend error | `TestListModels.test_unreachable_exits_with_backend_specific_hint`, `TestCallLLM.test_connection_refused_gives_clear_error` |
 | HTTP error surfaces server's response body | `TestCallLLM.test_http_error_surfaces_response_body_message` |

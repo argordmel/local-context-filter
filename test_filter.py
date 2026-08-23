@@ -321,13 +321,19 @@ class TestResolveModel(unittest.TestCase):
              mock.patch.object(flt, "running_ollama_model", return_value="stale-unpulled-model"):
             self.assertEqual(flt.resolve_model("ollama", "http://x", None), "qwen2.5:7b")
 
-    def test_lmstudio_no_default_picks_sorted_first(self):
-        with mock.patch.object(flt, "list_models", return_value={"b-model", "a-model"}):
+    def test_lmstudio_no_default_falls_back_to_first_v1_entry_when_no_state_data(self):
+        with mock.patch.object(flt, "list_models", return_value=["b-model", "a-model"]), \
+             mock.patch.object(flt, "running_lmstudio_model", return_value=None):
+            self.assertEqual(flt.resolve_model("lmstudio", "http://x", None), "b-model")
+
+    def test_lmstudio_prefers_actually_loaded_model_over_v1_order(self):
+        with mock.patch.object(flt, "list_models", return_value=["b-model", "a-model"]), \
+             mock.patch.object(flt, "running_lmstudio_model", return_value="a-model"):
             self.assertEqual(flt.resolve_model("lmstudio", "http://x", None), "a-model")
 
-    def test_openai_no_default_picks_sorted_first(self):
-        with mock.patch.object(flt, "list_models", return_value={"b-model", "a-model"}):
-            self.assertEqual(flt.resolve_model("openai", "http://x", None), "a-model")
+    def test_openai_no_default_picks_first_reported(self):
+        with mock.patch.object(flt, "list_models", return_value=["b-model", "a-model"]):
+            self.assertEqual(flt.resolve_model("openai", "http://x", None), "b-model")
 
     def test_openai_explicit_model_missing_exits(self):
         with mock.patch.object(flt, "list_models", return_value={"other-model"}):
@@ -352,19 +358,19 @@ class TestListModels(unittest.TestCase):
         payload = {"models": [{"name": "qwen2.5:7b"}, {"name": "gpt-oss:20b"}]}
         with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
             names = flt.list_models("ollama", "http://x")
-        self.assertEqual(names, {"qwen2.5:7b", "gpt-oss:20b"})
+        self.assertEqual(names, ["qwen2.5:7b", "gpt-oss:20b"])
 
-    def test_lmstudio_parses_ids(self):
+    def test_lmstudio_parses_ids_preserving_order(self):
         payload = {"data": [{"id": "google/gemma-4-e2b"}, {"id": "qwen/qwen3.5-9b"}]}
         with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
             names = flt.list_models("lmstudio", "http://x")
-        self.assertEqual(names, {"google/gemma-4-e2b", "qwen/qwen3.5-9b"})
+        self.assertEqual(names, ["google/gemma-4-e2b", "qwen/qwen3.5-9b"])
 
     def test_openai_parses_ids_same_shape_as_lmstudio(self):
         payload = {"data": [{"id": "llama-3-8b-instruct"}]}
         with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
             names = flt.list_models("openai", "http://x")
-        self.assertEqual(names, {"llama-3-8b-instruct"})
+        self.assertEqual(names, ["llama-3-8b-instruct"])
 
     def test_unreachable_exits_with_backend_specific_hint(self):
         with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
@@ -403,6 +409,33 @@ class TestRunningOllamaModel(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 flt.list_models("openai", "http://localhost:8080")
         self.assertIn("openai not reachable", str(ctx.exception))
+
+
+class TestRunningLmstudioModel(unittest.TestCase):
+    def _fake_response(self, payload):
+        body = json.dumps(payload).encode("utf-8")
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(body)
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_returns_the_loaded_entry_ignoring_not_loaded_ones(self):
+        payload = {"data": [
+            {"id": "google/gemma-4-e4b", "state": "not-loaded"},
+            {"id": "qwen/qwen3.5-9b", "state": "loaded"},
+            {"id": "google/gemma-4-e2b", "state": "not-loaded"},
+        ]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            self.assertEqual(flt.running_lmstudio_model("http://x"), "qwen/qwen3.5-9b")
+
+    def test_nothing_loaded_returns_none(self):
+        payload = {"data": [{"id": "google/gemma-4-e4b", "state": "not-loaded"}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            self.assertIsNone(flt.running_lmstudio_model("http://x"))
+
+    def test_unreachable_returns_none_not_exit(self):
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+            self.assertIsNone(flt.running_lmstudio_model("http://x"))
 
 
 class TestCallLLM(unittest.TestCase):

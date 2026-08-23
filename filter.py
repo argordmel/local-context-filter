@@ -108,7 +108,11 @@ SYSTEM_PROMPT = (
 
 
 def list_models(backend, host):
-    """Return the set of model names/ids currently available on the backend."""
+    """Return the model names/ids currently available on the backend, as a
+    list preserving the order the server reported them in (for lmstudio/
+    openai this is also load order — their /v1/models only lists loaded
+    models, first-loaded first).
+    """
     url = f"{host}/api/tags" if backend == "ollama" else f"{host}/v1/models"
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
@@ -122,8 +126,8 @@ def list_models(backend, host):
             start_hint = "the server"
         sys.exit(f"error: {backend} not reachable at {host}. Start it with {start_hint}.")
     if backend == "ollama":
-        return {m.get("name") for m in data.get("models", [])}
-    return {m.get("id") for m in data.get("data", [])}
+        return [m.get("name") for m in data.get("models", [])]
+    return [m.get("id") for m in data.get("data", [])]
 
 
 def running_ollama_model(host):
@@ -141,12 +145,42 @@ def running_ollama_model(host):
     return models[0].get("name") if models else None
 
 
+def running_lmstudio_model(host):
+    """Return the id of the model currently loaded in LM Studio, or None if
+    none is loaded or the check fails for any reason.
+
+    /v1/models lists every downloaded model regardless of load state, so it
+    can't answer this — only LM Studio's own /api/v0/models exposes a
+    "state": "loaded"/"not-loaded" field per model. Never raises — this is
+    a best-effort convenience, not a requirement.
+    """
+    try:
+        with urllib.request.urlopen(f"{host}/api/v0/models", timeout=3) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.URLError, json.JSONDecodeError):
+        return None
+    for m in data.get("data", []):
+        if m.get("state") == "loaded":
+            return m.get("id")
+    return None
+
+
 def resolve_model(backend, host, model):
     """Validate an explicit --model, or auto-pick one when none was given.
 
-    Auto-pick order for ollama: the model currently loaded in memory (so it
-    matches whatever you're already running, no extra load time) > the
-    hardcoded default if pulled > alphabetically first pulled model.
+    Auto-pick order for ollama: the model currently loaded in memory (via
+    /api/ps, so it matches whatever you're already running, no extra load
+    time) > the hardcoded default if pulled > alphabetically first pulled
+    model.
+
+    Auto-pick for lmstudio: the currently loaded model (via LM Studio's own
+    /api/v0/models, which exposes load state — plain /v1/models lists every
+    downloaded model, loaded or not, so it can't tell us this) > first
+    entry in /v1/models order as a last resort.
+
+    Auto-pick for openai (generic OpenAI-compatible servers): first entry
+    in /v1/models order — there's no standard way to ask a generic server
+    which model is "loaded".
     """
     names = list_models(backend, host)
     if model:
@@ -163,10 +197,17 @@ def resolve_model(backend, host, model):
         running = running_ollama_model(host)
         if running and running in names:
             return running
-    if backend in DEFAULT_MODELS and DEFAULT_MODELS[backend] in names:
-        return DEFAULT_MODELS[backend]
+        if DEFAULT_MODELS["ollama"] in names:
+            return DEFAULT_MODELS["ollama"]
+        if names:
+            return sorted(names)[0]
+        sys.exit(f"error: no models available on {backend} at {host}.")
+    if backend == "lmstudio":
+        running = running_lmstudio_model(host)
+        if running and running in names:
+            return running
     if names:
-        return sorted(names)[0]
+        return names[0]
     sys.exit(f"error: no models available on {backend} at {host}.")
 
 

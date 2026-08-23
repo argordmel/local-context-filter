@@ -758,9 +758,12 @@ def main():
     ap.add_argument("--max-words", type=int, default=300, help="target max words of output (default: 300)")
     args = ap.parse_args()
 
-    other_modes = args.diff or bool(args.grep) or args.ls or bool(args.find) or bool(args.run) or args.count or bool(args.task)
+    other_modes = (
+        args.diff or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
+        or args.count or bool(args.task) or bool(args.input)
+    )
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--grep/--ls/--find/--run/--count/--task")
+        ap.error("--report cannot be combined with --diff/--grep/--ls/--find/--run/--count/--task/--input")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:

@@ -826,6 +826,22 @@ class TestCLIArgGating(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--report cannot be combined", result.stderr)
 
+    def test_report_and_input_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--report", "--input", "SKILL.md"],
+            capture_output=True, text=True, cwd=os.path.dirname(self.SCRIPT),
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--report cannot be combined", result.stderr)
+
+    def test_clean_and_input_mutually_exclusive(self):
+        result = subprocess.run(
+            [sys.executable, self.SCRIPT, "--clean", "--input", "SKILL.md"],
+            capture_output=True, text=True, cwd=os.path.dirname(self.SCRIPT),
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--clean cannot be combined", result.stderr)
+
     def test_clean_and_ls_mutually_exclusive(self):
         result = subprocess.run(
             [sys.executable, self.SCRIPT, "--clean", "--ls"],

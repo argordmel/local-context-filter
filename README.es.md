@@ -341,6 +341,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--run --input` archivo único falla limpio, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totales por modo, sentinel `NO_USAGE_DATA` | `TestGenerateReport` (todos los casos), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutuamente excluyentes con otros modos | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
+| `--report`/`--clean` mutuamente excluyentes con `--input` solo (antes se ignoraba en silencio) | `TestCLIArgGating.test_report_and_input_mutually_exclusive`, `test_clean_and_input_mutually_exclusive` |
 | `--clean` borra usage.json, idempotente | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |
 | Log de uso rota pasadas 6000 líneas, conserva las 5000 más recientes, intacto bajo el gatillo | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (todos los casos) |
 | Entrada sobredimensionada de `--task` en chunks (no truncada), resultados unidos | `TestCallLLMChunked` (todos los casos) |

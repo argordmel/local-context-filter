@@ -331,6 +331,7 @@ needs to be running to pass.
 | `--run --input` a single file errors cleanly, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |
 | `--report` totals by mode, `NO_USAGE_DATA` sentinel | `TestGenerateReport` (all cases), `TestCLIEndToEnd.test_report_no_data_prints_sentinel`, `test_report_after_usage_shows_totals` |
 | `--report`/`--clean` mutually exclusive with other modes | `TestCLIArgGating.test_report_and_grep_mutually_exclusive`, `test_clean_and_ls_mutually_exclusive`, `test_clean_and_report_mutually_exclusive` |
+| `--report`/`--clean` mutually exclusive with bare `--input` (previously silently ignored) | `TestCLIArgGating.test_report_and_input_mutually_exclusive`, `test_clean_and_input_mutually_exclusive` |
 | `--clean` deletes usage.json, idempotent | `TestCLIEndToEnd.test_clean_removes_log_and_is_idempotent` |
 | Usage log rotates past 6000 lines, keeps most recent 5000, untouched below trigger | `TestLogUsage.test_log_rotates_once_over_trigger_keeping_most_recent`, `test_log_stays_under_trigger_untouched`, `TestRotateUsageLog` (all cases) |
 | Oversized `--task` input chunked (not truncated), results joined | `TestCallLLMChunked` (all cases) |

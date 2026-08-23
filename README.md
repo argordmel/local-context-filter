@@ -12,6 +12,8 @@ offloads big/raw context to a **local** LLM before anything reaches Claude:
   irrelevant and only the compact result goes into Claude's context.
 - **`--grep` + `--task`** — grep first (exact, free), then have the local
   model narrow a noisy match list down to what's relevant.
+- **`--diff`** — filters `git diff HEAD` at cwd; raw diff (free) without
+  `--task`, or model-filtered with it.
 
 Backed by [Ollama](https://ollama.com) (default) or [LM Studio](https://lmstudio.ai)
 (OpenAI-compatible local server), selectable via `--backend`. See [TODO](#todo).
@@ -71,6 +73,12 @@ python3 ~/.claude/skills/local-context-filter/filter.py \
 
 # grep first, then let the local model narrow a noisy match list
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "which TODOs are about auth"
+
+# raw working-tree diff, no LLM, no Claude tokens
+python3 ~/.claude/skills/local-context-filter/filter.py --diff
+
+# same, filtered by task
+python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
 ```
 
 Full flag reference and behavior notes: [SKILL.md](SKILL.md).
@@ -110,6 +118,15 @@ preference explicit and consistent instead of judgment-call-by-judgment-call.
 - The LLM-filter mode truncates input over ~24k chars (with a stderr
   warning) to stay inside the model's context window — split large
   directory scans into smaller runs instead of one pass over everything.
+
+## Tests
+
+```bash
+python3 ~/.claude/skills/local-context-filter/test_filter.py -v
+```
+
+`unittest`, stdlib only. Mocks all network calls (Ollama/LM Studio) and uses
+real temp git repos for `--diff` — no server needs to be running to pass.
 
 ## TODO
 

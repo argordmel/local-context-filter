@@ -20,6 +20,8 @@ a compact result — that's what goes into Claude's context, not the raw blob.
   burn context on noise
 - Exact pattern search across a whole project (`--grep`, see below) —
   cheaper and more precise than the LLM-filter mode for this
+- Reviewing/summarizing the current working tree changes (`--diff`, see
+  below) without pasting a large `git diff` into the conversation
 
 **Don't use** the LLM-filter mode (`--task` without `--grep`) for content
 that's already small, or when you need the exact full content verbatim
@@ -114,6 +116,22 @@ the local model to narrow the match list down to what's relevant:
 python3 ~/.claude/skills/local-context-filter/filter.py --grep "TODO" --task "which TODOs are about auth"
 ```
 
+### Working-tree diff (`--diff`)
+
+```bash
+# raw diff, no LLM
+python3 ~/.claude/skills/local-context-filter/filter.py --diff
+
+# filtered by task
+python3 ~/.claude/skills/local-context-filter/filter.py --diff --task "which changes touch auth"
+```
+
+Runs `git diff HEAD` (staged + unstaged) at cwd and prints it as-is — no LLM
+involved, zero context cost, same as `--grep` alone. Add `--task` to have the
+local model filter the diff down to what's relevant. Prints `NO_CHANGES` if
+the working tree is clean, exits with an error if cwd isn't a git repo.
+Cannot combine with `--grep` or `--input`.
+
 ### Real cost example
 
 Measured on a mid-size project, searching for `ServiceOrder` under `app/`
@@ -136,6 +154,7 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--input` | stdin (LLM mode) / cwd (`--grep`) | file or directory to filter/search |
 | `--grep` | — | exact regex pattern; switches to no-LLM search mode |
 | `--ignore-case` | off | case-insensitive `--grep` |
+| `--diff` | off | filter `git diff HEAD` at cwd instead of `--input`; no-LLM without `--task` |
 | `--backend` | `ollama` | local LLM server: `ollama` or `lmstudio` |
 | `--host` | backend default | override host (ollama `:11434`, lmstudio `:1234`) |
 | `--model` | `qwen2.5:7b` (ollama) / first loaded model (lmstudio) | model tag/id |

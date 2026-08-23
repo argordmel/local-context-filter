@@ -1,4 +1,4 @@
-# local-context-filter
+# Skill: Local Context Filter
 
 A [Claude Code](https://claude.com/claude-code) skill (`local-context-filter`) that
 offloads big/raw context to a **local** LLM before anything reaches Claude:

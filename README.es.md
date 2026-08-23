@@ -131,12 +131,10 @@ disponible), agrega una línea así a tu `~/.claude/CLAUDE.md` global (aplica
 a todo proyecto) o al `CLAUDE.md` de un proyecto:
 
 ```markdown
-# Búsqueda local
-Para búsqueda exacta de strings/regex en este repo, preferir el modo
-`--grep` de la skill `local-context-filter` sobre leer archivos
-directamente — cuesta cero tokens de contexto. Solo recurrir a leer
-archivos cuando se necesite ver el contenido completo, no solo las líneas
-que matchean.
+# Local search
+For exact string/regex search in a project, prefer the `local-context-filter` skill's `--grep` mode over reading files directly or built-in grep tools — it costs zero Claude context tokens. Only fall back to reading files when full file content/formatting is needed, not just matching lines.
+
+For reviewing/summarizing the current working tree changes, prefer the same skill's `--diff` mode (`git diff HEAD` under the hood) over running `git diff` and pasting its output into context — `--diff` alone (no `--task`) is free too. Add `--task` only when the raw diff is too noisy and needs filtering by a local model.
 ```
 
 Sin esa instrucción, Claude igual *descubre* la skill vía su descripción

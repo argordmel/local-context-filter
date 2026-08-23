@@ -35,7 +35,9 @@ delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude:
 también acepta una ruta absoluta o expandida con `~` en otro lado dentro
 de tu home (ej. `--input ~/otro-proyecto`) — así podés apuntar cualquier
 modo a otro proyecto sin hacer `cd` primero. Ver [Seguridad](#seguridad)
-para la regla exacta.
+para la regla exacta. Un `--input` que no existe es un error para
+`--grep`/`--find`/`--count`, distinto de un resultado real de "nada
+coincidió".
 
 Soportado por [Ollama](https://ollama.com) (por defecto), [LM Studio](https://lmstudio.ai),
 o cualquier otro servidor compatible con OpenAI (llama.cpp server, vLLM, ...)
@@ -307,6 +309,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--grep` búsqueda exacta, números de línea | `TestGrepSearch.test_finds_matches_with_line_numbers`, `TestCLIEndToEnd.test_grep_prints_matches` |
 | `--grep --ignore-case` | `TestGrepSearch.test_case_insensitive`, `TestCLIEndToEnd.test_grep_ignore_case_flag` |
 | `--grep` sin coincidencias → `NO_MATCHES` | `TestGrepSearch.test_no_matches_returns_empty_list`, `TestCLIEndToEnd.test_grep_no_matches_prints_sentinel` |
+| `--grep`/`--find`/`--count` con `--input` inexistente → error, distinto de vacío/sin coincidencias | `TestCLIEndToEnd.test_grep_nonexistent_input_errors_distinctly_from_no_matches`, `test_find_nonexistent_input_errors_distinctly_from_no_matches`, `test_count_nonexistent_input_errors_distinctly_from_empty` |
 | `--grep` salta `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
 | `--grep` tope de 500 coincidencias + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
 | `--grep` salta archivos binarios/no legibles | `TestGrepSearch.test_binary_file_skipped_without_crash` |
@@ -315,6 +318,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--diff --input` acotado a una ruta | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
 | `--diff` árbol limpio → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
 | `--diff` fuera de un repo git → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
+| `--diff` fuera de un repo git → error corto y limpio, no el volcado de ayuda `--no-index` de git | `TestCLIEndToEnd.test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump`, `test_diff_input_not_a_git_repo_errors_cleanly` |
 | `--diff` + `--grep` mutuamente excluyentes | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
 | `--ls` lista archivos/directorios, salta excluidos | `TestListTree.test_lists_files_and_dirs`, `TestListTree.test_skips_excluded_dirs`, `TestCLIEndToEnd.test_ls_prints_entries` |
 | `--ls` directorio vacío → `NO_ENTRIES` | `TestListTree.test_empty_dir_returns_empty_list`, `TestCLIEndToEnd.test_ls_empty_dir_prints_sentinel` |

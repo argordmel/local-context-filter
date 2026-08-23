@@ -33,7 +33,9 @@ A skill for [Claude Code](https://claude.com/claude-code) (`local-context-filter
 accepts an absolute or `~`-expanded path elsewhere under your home
 directory (e.g. `--input ~/other-project`) — so you can point any mode at
 a different project without `cd`ing into it first. See
-[Safety](#safety) for the exact rule.
+[Safety](#safety) for the exact rule. A `--input` that doesn't exist at
+all is an error for `--grep`/`--find`/`--count`, distinct from a real
+"nothing matched" result.
 
 Backed by [Ollama](https://ollama.com) (default), [LM Studio](https://lmstudio.ai),
 or any other OpenAI-compatible server (llama.cpp server, vLLM, ...) via
@@ -297,6 +299,7 @@ needs to be running to pass.
 | `--grep` exact search, line numbers | `TestGrepSearch.test_finds_matches_with_line_numbers`, `TestCLIEndToEnd.test_grep_prints_matches` |
 | `--grep --ignore-case` | `TestGrepSearch.test_case_insensitive`, `TestCLIEndToEnd.test_grep_ignore_case_flag` |
 | `--grep` no matches → `NO_MATCHES` | `TestGrepSearch.test_no_matches_returns_empty_list`, `TestCLIEndToEnd.test_grep_no_matches_prints_sentinel` |
+| `--grep`/`--find`/`--count` nonexistent `--input` → error, distinct from empty/no-match | `TestCLIEndToEnd.test_grep_nonexistent_input_errors_distinctly_from_no_matches`, `test_find_nonexistent_input_errors_distinctly_from_no_matches`, `test_count_nonexistent_input_errors_distinctly_from_empty` |
 | `--grep` skips `.git`/`node_modules`/etc. | `TestGrepSearch.test_skips_excluded_dirs` |
 | `--grep` 500-match cap + warning | `TestGrepSearch.test_hits_match_cap_and_warns` |
 | `--grep` skips unreadable/binary files | `TestGrepSearch.test_binary_file_skipped_without_crash` |
@@ -305,6 +308,7 @@ needs to be running to pass.
 | `--diff --input` scoped to one path | `TestGitDiff.test_path_scopes_diff_to_single_file`, `TestCLIEndToEnd.test_diff_scoped_to_input` |
 | `--diff` clean tree → `NO_CHANGES` | `TestGitDiff.test_no_changes_returns_empty_string`, `TestCLIEndToEnd.test_diff_no_changes_prints_sentinel` |
 | `--diff` outside a git repo → error | `TestGitDiff.test_not_a_git_repo_errors`, `TestCLIEndToEnd.test_diff_not_a_git_repo_errors` |
+| `--diff` outside a git repo → clean short error, not git's `--no-index` usage dump | `TestCLIEndToEnd.test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump`, `test_diff_input_not_a_git_repo_errors_cleanly` |
 | `--diff` + `--grep` mutually exclusive | `TestCLIArgGating.test_diff_and_grep_mutually_exclusive` |
 | `--ls` lists files/dirs, skips excluded dirs | `TestListTree.test_lists_files_and_dirs`, `TestListTree.test_skips_excluded_dirs`, `TestCLIEndToEnd.test_ls_prints_entries` |
 | `--ls` empty dir → `NO_ENTRIES` | `TestListTree.test_empty_dir_returns_empty_list`, `TestCLIEndToEnd.test_ls_empty_dir_prints_sentinel` |

@@ -256,6 +256,18 @@ def set_confine_root(input_arg):
     CONFINE_ROOT = real
 
 
+def require_existing_input(input_arg, root):
+    """Exit with a clear error if --input was given but doesn't exist.
+
+    Without this, --grep/--find/--count on a nonexistent path silently walk
+    an empty tree and print the same NO_MATCHES/NO_ENTRIES sentinel as a
+    real empty result — indistinguishable from "nothing matched" for the
+    caller. --diff is exempt: a deleted file is a legitimate diff target.
+    """
+    if input_arg and not os.path.exists(root):
+        sys.exit(f"error: '{input_arg}' does not exist")
+
+
 def _is_symlink_escaping_root(path):
     """True if path is a symlink whose target resolves outside CONFINE_ROOT
     — used to skip symlinks found *inside* an already-confined tree during
@@ -577,13 +589,19 @@ def get_git_diff(root, path=None):
     If path is given, scopes the diff to that file/directory (must already
     be confined to root by the caller).
     """
+    try:
+        check = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"], cwd=root, capture_output=True, text=True, timeout=10,
+        )
+    except FileNotFoundError:
+        sys.exit("error: git not found on PATH")
+    if check.returncode != 0:
+        sys.exit(f"error: '{root}' is not inside a git repository")
+
     cmd = ["git", "diff", "HEAD"]
     if path:
         cmd += ["--", os.path.relpath(path, root)]
-    try:
-        result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=30)
-    except FileNotFoundError:
-        sys.exit("error: git not found on PATH")
+    result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         sys.exit(f"error: git diff failed: {result.stderr.strip()}")
     return result.stdout
@@ -772,6 +790,7 @@ def main():
 
     if args.find:
         root = confine_to_root(args.input) if args.input else ROOT
+        require_existing_input(args.input, root)
         matches = find_search(root, args.find, args.ignore_case, excluded_dirs=excluded_dirs)
         if not matches:
             print("NO_MATCHES")
@@ -807,6 +826,7 @@ def main():
 
     if args.count:
         root = confine_to_root(args.input) if args.input else ROOT
+        require_existing_input(args.input, root)
         counted = count_lines(root, excluded_dirs=excluded_dirs)
         if counted is None:
             print("NO_ENTRIES")
@@ -841,6 +861,7 @@ def main():
 
     if args.grep:
         root = confine_to_root(args.input) if args.input else ROOT
+        require_existing_input(args.input, root)
         stats = {}
         matches = grep_search(root, args.grep, args.ignore_case, stats=stats, excluded_dirs=excluded_dirs)
         chars_scanned = stats.get("chars_scanned", 0)

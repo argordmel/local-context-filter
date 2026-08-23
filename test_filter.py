@@ -864,6 +864,11 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "NO_MATCHES")
 
+    def test_grep_nonexistent_input_errors_distinctly_from_no_matches(self):
+        result = self.run_cli("--grep", "ServiceOrder", "--input", "does-not-exist")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not exist", result.stdout + result.stderr)
+
     def test_grep_ignore_case_flag(self):
         self.write("a.js", "SERVICEORDER\n")
         result = self.run_cli("--grep", "serviceorder", "--ignore-case")
@@ -906,6 +911,20 @@ class TestCLIEndToEnd(TempRepoTestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("error:", result.stdout + result.stderr)
 
+    def test_diff_not_a_git_repo_errors_cleanly_not_with_git_usage_dump(self):
+        result = self.run_cli("--diff")
+        combined = result.stdout + result.stderr
+        self.assertIn("not inside a git repository", combined)
+        self.assertNotIn("--no-index", combined)
+        self.assertLess(len(combined), 200)
+
+    def test_diff_input_not_a_git_repo_errors_cleanly(self):
+        self.write("a.txt", "hi")
+        result = self.run_cli("--diff", "--input", ".")
+        combined = result.stdout + result.stderr
+        self.assertIn("not inside a git repository", combined)
+        self.assertNotIn("--no-index", combined)
+
     def test_ls_prints_entries(self):
         self.write("a.txt", "hi")
         self.write("sub/b.txt", "hi")
@@ -945,6 +964,11 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--find", "*.js")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "NO_MATCHES")
+
+    def test_find_nonexistent_input_errors_distinctly_from_no_matches(self):
+        result = self.run_cli("--find", "*.js", "--input", "does-not-exist")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not exist", result.stdout + result.stderr)
 
     def test_find_respects_project_excludes_config(self):
         self.write("fixtures/dump.js", "x")
@@ -996,6 +1020,11 @@ class TestCLIEndToEnd(TempRepoTestCase):
         result = self.run_cli("--count")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "NO_ENTRIES")
+
+    def test_count_nonexistent_input_errors_distinctly_from_empty(self):
+        result = self.run_cli("--count", "--input", "does-not-exist")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not exist", result.stdout + result.stderr)
 
     def test_count_matches_real_wc_l_without_trailing_newline(self):
         full = self.write("a.txt", "l1\nl2\nl3")  # no trailing newline

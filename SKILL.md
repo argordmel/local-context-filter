@@ -122,6 +122,11 @@ way, symlinks pointing outside the active boundary are rejected —
 including one found *inside* the tree partway through a recursive walk,
 not just in `--input` itself.
 
+A `--input` that doesn't exist on disk at all is an error (`error: 'X'
+does not exist`) for `--grep`/`--find`/`--count` — it's not conflated with
+a real "nothing matched" result (`NO_MATCHES`/`NO_ENTRIES`), which means
+the path did exist and was legitimately empty/had no matches.
+
 Or pipe stdin:
 
 ```bash

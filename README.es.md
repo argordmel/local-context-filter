@@ -156,6 +156,18 @@ Sin esa instrucción, Claude igual *descubre* la skill vía su descripción
 cuando una tarea parece encajar — la línea en CLAUDE.md solo hace la
 preferencia explícita y consistente en vez de una decisión caso por caso.
 
+## Log de uso (local, privado)
+
+Cada corrida agrega una línea a `usage.log` junto a `filter.py` —
+gitignored, nunca sale de tu máquina. Cada entrada es solo conteos:
+`{ts, mode, backend, chars_in, chars_out, tokens_saved_est}` — sin
+contenido de archivos, rutas, ni el texto de `--task`. `tokens_saved_est`
+es una aproximación tosca (`chars/4`) al tokenizer real, útil como
+tendencia, no como cifra exacta. Sobrescribí la ruta con
+`LOCAL_CONTEXT_FILTER_LOG=/ruta/al/archivo`; si no se puede escribir, la
+corrida igual funciona — el fallo de log es silencioso y nunca bloquea el
+comando.
+
 ## Seguridad
 
 - Confinamiento de rutas: `--input` (y la raíz de búsqueda de `--grep`)

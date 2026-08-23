@@ -151,6 +151,16 @@ Without that instruction, Claude will still *discover* the skill via its
 description when a task looks like a fit — the CLAUDE.md line just makes the
 preference explicit and consistent instead of judgment-call-by-judgment-call.
 
+## Usage log (local, private)
+
+Every run appends one line to `usage.log` next to `filter.py` — gitignored,
+never leaves the machine. Each entry is just counts: `{ts, mode, backend,
+chars_in, chars_out, tokens_saved_est}` — no file contents, paths, or
+`--task` text. `tokens_saved_est` is a rough `chars/4` proxy for the real
+tokenizer, useful as a trend, not an exact figure. Override the path with
+`LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; if it can't be written, the run
+still succeeds — logging failures are silent and never block the command.
+
 ## Safety
 
 - Path confinement: `--input` (and `--grep`'s search root) can go into

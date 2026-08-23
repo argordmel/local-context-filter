@@ -27,10 +27,13 @@ class TempRepoTestCase(unittest.TestCase):
         os.chdir(self.tmpdir)
         self._orig_root = flt.ROOT
         flt.ROOT = os.path.realpath(self.tmpdir)
+        self._orig_log_path = flt.LOG_PATH
+        flt.LOG_PATH = os.path.join(self.tmpdir, "usage.log")
 
     def tearDown(self):
         os.chdir(self._orig_cwd)
         flt.ROOT = self._orig_root
+        flt.LOG_PATH = self._orig_log_path
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def write(self, relpath, content):
@@ -108,6 +111,37 @@ class TestGrepSearch(TempRepoTestCase):
             f.write(b"\xff\xfe\x00\x01ServiceOrder")
         matches = flt.grep_search(flt.ROOT, "ServiceOrder")
         self.assertEqual(matches, [])
+
+    def test_stats_reports_chars_scanned(self):
+        self.write("a.js", "const ServiceOrder = 1;\nconst other = 2;\n")
+        stats = {}
+        flt.grep_search(flt.ROOT, "ServiceOrder", stats=stats)
+        self.assertEqual(stats["chars_scanned"], len("const ServiceOrder = 1;\n") + len("const other = 2;\n"))
+
+
+class TestLogUsage(TempRepoTestCase):
+    def test_appends_one_json_line_with_expected_fields(self):
+        flt.log_usage("grep", None, 100, 20)
+        with open(flt.LOG_PATH, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        entry = json.loads(lines[0])
+        self.assertEqual(entry["mode"], "grep")
+        self.assertIsNone(entry["backend"])
+        self.assertEqual(entry["chars_in"], 100)
+        self.assertEqual(entry["chars_out"], 20)
+        self.assertEqual(entry["tokens_saved_est"], 20)
+        self.assertIn("ts", entry)
+
+    def test_never_negative_savings(self):
+        flt.log_usage("task", "ollama", 10, 50)
+        with open(flt.LOG_PATH, "r", encoding="utf-8") as f:
+            entry = json.loads(f.read().splitlines()[0])
+        self.assertEqual(entry["tokens_saved_est"], 0)
+
+    def test_write_failure_does_not_raise(self):
+        flt.LOG_PATH = os.path.join(self.tmpdir, "nonexistent-dir", "usage.log")
+        flt.log_usage("ls", None, 10, 10)  # should not raise
 
 
 class TestListTree(TempRepoTestCase):
@@ -394,8 +428,9 @@ class TestCLIEndToEnd(TempRepoTestCase):
     SCRIPT = os.path.join(os.path.dirname(os.path.realpath(__file__)), "filter.py")
 
     def run_cli(self, *args):
+        env = {**os.environ, "LOCAL_CONTEXT_FILTER_LOG": os.path.join(self.tmpdir, "usage.log")}
         return subprocess.run(
-            [sys.executable, self.SCRIPT, *args], cwd=self.tmpdir, capture_output=True, text=True,
+            [sys.executable, self.SCRIPT, *args], cwd=self.tmpdir, capture_output=True, text=True, env=env,
         )
 
     def test_grep_prints_matches(self):

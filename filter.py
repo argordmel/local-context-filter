@@ -35,6 +35,12 @@ OpenAI-compatible server — llama.cpp server, vLLM, etc.) which requires
 default host with --host too.
 
 Prints the filtered content to stdout. Nothing else goes to stdout.
+
+Every run appends one line to usage.log (next to this script, gitignored):
+a local-only, no-network JSON record of {mode, backend, chars_in, chars_out,
+tokens_saved_est} — no file contents, paths, or task text. Purely so you can
+eyeball how much this has saved over time; never blocks the command if the
+log can't be written.
 """
 import argparse
 import json
@@ -44,10 +50,15 @@ import subprocess
 import sys
 import urllib.request
 import urllib.error
+from datetime import datetime, timezone
 
 ROOT = os.path.realpath(os.getcwd())
 EXCLUDED_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__", ".next", "coverage"}
 MAX_GREP_MATCHES = 500
+LOG_PATH = os.environ.get(
+    "LOCAL_CONTEXT_FILTER_LOG",
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.log"),
+)
 
 DEFAULT_HOSTS = {
     "ollama": "http://localhost:11434",
@@ -129,12 +140,18 @@ def read_input(path):
     return sys.stdin.read()
 
 
-def grep_search(root, pattern, ignore_case=False):
-    """Recursively grep for `pattern` (regex) under root, skipping EXCLUDED_DIRS and binary files."""
+def grep_search(root, pattern, ignore_case=False, stats=None):
+    """Recursively grep for `pattern` (regex) under root, skipping EXCLUDED_DIRS and binary files.
+
+    If `stats` (a dict) is passed, sets stats['chars_scanned'] to the total
+    characters read across all scanned lines, matched or not — used only for
+    local usage logging, doesn't affect the return value.
+    """
     flags = re.IGNORECASE if ignore_case else 0
     rx = re.compile(pattern, flags)
     matches = []
     truncated = False
+    chars_scanned = 0
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS]
         for name in sorted(filenames):
@@ -143,6 +160,7 @@ def grep_search(root, pattern, ignore_case=False):
             try:
                 with open(full, "r", encoding="utf-8") as f:
                     for lineno, line in enumerate(f, start=1):
+                        chars_scanned += len(line)
                         if rx.search(line):
                             matches.append(f"{rel}:{lineno}: {line.rstrip()}")
                             if len(matches) >= MAX_GREP_MATCHES:
@@ -156,7 +174,34 @@ def grep_search(root, pattern, ignore_case=False):
             break
     if truncated:
         print(f"warning: hit {MAX_GREP_MATCHES}-match cap, results truncated; narrow the pattern or --input path", file=sys.stderr)
+    if stats is not None:
+        stats["chars_scanned"] = chars_scanned
     return matches
+
+
+def log_usage(mode, backend, chars_in, chars_out):
+    """Append one JSON line to LOG_PATH with local-only usage metadata.
+
+    No file contents, paths, or task text are recorded — only counts. Never
+    raises: a logging failure (e.g. read-only filesystem) must not break the
+    actual command.
+    """
+    try:
+        tokens_saved_est = None
+        if chars_in is not None and chars_out is not None:
+            tokens_saved_est = max(0, chars_in - chars_out) // 4
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": mode,
+            "backend": backend,
+            "chars_in": chars_in,
+            "chars_out": chars_out,
+            "tokens_saved_est": tokens_saved_est,
+        }
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass
 
 
 def list_tree(root):
@@ -301,13 +346,17 @@ def main():
         entries = list_tree(root)
         if not entries:
             print("NO_ENTRIES")
+            log_usage("ls", None, 0, 0)
             return
+        joined = "\n".join(entries)
         if not args.task:
-            print("\n".join(entries))
+            print(joined)
+            log_usage("ls", None, len(joined), len(joined))
             return
         model = resolve_model(args.backend, host, args.model)
-        result = call_llm(args.backend, host, model, args.task, "\n".join(entries), args.max_words)
+        result = call_llm(args.backend, host, model, args.task, joined, args.max_words)
         print(result)
+        log_usage("ls", args.backend, len(joined), len(result))
         return
 
     if args.diff:
@@ -315,27 +364,36 @@ def main():
         diff = get_git_diff(ROOT, diff_path)
         if not diff.strip():
             print("NO_CHANGES")
+            log_usage("diff", None, 0, 0)
             return
         if not args.task:
             print(diff, end="" if diff.endswith("\n") else "\n")
+            log_usage("diff", None, len(diff), len(diff))
             return
         model = resolve_model(args.backend, host, args.model)
         result = call_llm(args.backend, host, model, args.task, diff, args.max_words)
         print(result)
+        log_usage("diff", args.backend, len(diff), len(result))
         return
 
     if args.grep:
         root = confine_to_root(args.input) if args.input else ROOT
-        matches = grep_search(root, args.grep, args.ignore_case)
+        stats = {}
+        matches = grep_search(root, args.grep, args.ignore_case, stats=stats)
+        chars_scanned = stats.get("chars_scanned", 0)
         if not matches:
             print("NO_MATCHES")
+            log_usage("grep", None, chars_scanned, 0)
             return
+        joined = "\n".join(matches)
         if not args.task:
-            print("\n".join(matches))
+            print(joined)
+            log_usage("grep", None, chars_scanned, len(joined))
             return
         model = resolve_model(args.backend, host, args.model)
-        result = call_llm(args.backend, host, model, args.task, "\n".join(matches), args.max_words)
+        result = call_llm(args.backend, host, model, args.task, joined, args.max_words)
         print(result)
+        log_usage("grep", args.backend, chars_scanned, len(result))
         return
 
     if not args.task:
@@ -344,6 +402,7 @@ def main():
     content = read_input(args.input)
     result = call_llm(args.backend, host, model, args.task, content, args.max_words)
     print(result)
+    log_usage("task", args.backend, len(content), len(result))
 
 
 if __name__ == "__main__":

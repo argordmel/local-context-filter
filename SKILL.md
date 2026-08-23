@@ -208,6 +208,17 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--model` | `qwen2.5:7b` (ollama) / first available model (lmstudio, openai) | model tag/id |
 | `--max-words` | 300 | target size of filtered output |
 
+## Usage log (local, private)
+
+Every run appends one line to `usage.log` next to `filter.py` (gitignored,
+never leaves the machine): `{ts, mode, backend, chars_in, chars_out,
+tokens_saved_est}`. No file contents, paths, or `--task` text are recorded
+— only counts, so it's safe to leave on and cheap to `tail` or delete.
+`tokens_saved_est` is a rough `chars/4` proxy, not the real Claude
+tokenizer — good for trend, not exact accounting. Override the location
+with `LOCAL_CONTEXT_FILTER_LOG=/path/to/file`; a write failure (e.g.
+read-only disk) is silently ignored and never breaks the actual command.
+
 ## Common Mistakes
 
 - Backend down or model not available — script now catches this upfront

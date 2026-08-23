@@ -335,6 +335,7 @@ para `--diff` — no hace falta ningún servidor corriendo para que pasen.
 | `--count` mutuamente excluyente con `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |
 | `--count` coincide con `wc -l` real, con/sin newline final, archivo vacío | `TestCLIEndToEnd.test_count_matches_real_wc_l_without_trailing_newline`, `test_count_empty_file_is_zero` |
 | `--run` rechaza binarios no permitidos | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
+| `--run`/`--diff` binario encontrado pero no ejecutable → error limpio, no traceback | `TestRunPackageCommand.test_non_executable_binary_on_path_errors_cleanly` |
 | `--run` ejecuta binario permitido, imprime salida | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutuamente excluyente con `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
 | `--run --input` archivo único falla limpio, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |

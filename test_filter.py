@@ -447,6 +447,24 @@ class TestGitDiff(TempRepoTestCase):
         self.assertNotIn("b.txt", diff)
 
 
+class TestRunPackageCommand(TempRepoTestCase):
+    def test_non_executable_binary_on_path_errors_cleanly(self):
+        fake_bin_dir = os.path.join(self.tmpdir, "fakebin")
+        os.makedirs(fake_bin_dir)
+        fake_npm = os.path.join(fake_bin_dir, "npm")
+        with open(fake_npm, "w") as f:
+            f.write("#!/bin/sh\necho hi\n")
+        os.chmod(fake_npm, 0o644)  # no execute bit
+        orig_path = os.environ.get("PATH", "")
+        os.environ["PATH"] = fake_bin_dir
+        try:
+            with self.assertRaises(SystemExit) as ctx:
+                flt.run_package_command(flt.ROOT, "npm --version")
+            self.assertIn("not executable", str(ctx.exception))
+        finally:
+            os.environ["PATH"] = orig_path
+
+
 class TestResolveModel(unittest.TestCase):
     def test_explicit_model_available_returned(self):
         with mock.patch.object(flt, "list_models", return_value={"qwen2.5:7b", "gpt-oss:20b"}):

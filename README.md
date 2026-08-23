@@ -325,6 +325,7 @@ needs to be running to pass.
 | `--count` mutually exclusive with `--diff` | `TestCLIEndToEnd.test_count_and_diff_mutually_exclusive` |
 | `--count` matches real `wc -l` on files with/without a trailing newline, empty file | `TestCLIEndToEnd.test_count_matches_real_wc_l_without_trailing_newline`, `test_count_empty_file_is_zero` |
 | `--run` rejects non-allowed binaries | `TestCLIEndToEnd.test_run_rejects_non_allowed_binary` |
+| `--run`/`--diff` binary found but not executable → clean error, not a traceback | `TestRunPackageCommand.test_non_executable_binary_on_path_errors_cleanly` |
 | `--run` executes allowed binary, prints output | `TestCLIEndToEnd.test_run_npm_version_prints_output` |
 | `--run` mutually exclusive with `--grep` | `TestCLIEndToEnd.test_run_and_grep_mutually_exclusive` |
 | `--run --input` a single file errors cleanly, no traceback | `TestCLIEndToEnd.test_run_input_single_file_errors_cleanly` |

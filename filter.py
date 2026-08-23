@@ -600,6 +600,8 @@ def get_git_diff(root, path=None):
         )
     except FileNotFoundError:
         sys.exit("error: git not found on PATH")
+    except PermissionError:
+        sys.exit("error: git found on PATH but is not executable")
     if check.returncode != 0:
         sys.exit(f"error: '{root}' is not inside a git repository")
 
@@ -636,6 +638,8 @@ def run_package_command(root, command):
         )
     except FileNotFoundError:
         sys.exit(f"error: '{bin_name}' not found on PATH")
+    except PermissionError:
+        sys.exit(f"error: '{bin_name}' found on PATH but is not executable")
     except subprocess.TimeoutExpired:
         sys.exit(f"error: --run command timed out after {RUN_TIMEOUT}s")
     output = result.stdout + result.stderr

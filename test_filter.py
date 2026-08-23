@@ -275,6 +275,13 @@ class TestProjectExcludes(TempRepoTestCase):
         self.write(".claude/local-context-filter.json", json.dumps({"exclude": "fixtures"}))
         self.assertEqual(flt.load_project_excludes(flt.ROOT), set())
 
+    def test_invalid_encoding_returns_empty_set_not_traceback(self):
+        full = os.path.join(self.tmpdir, ".claude", "local-context-filter.json")
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(b"\xff\xfe{\"exclude\":[\"x\"]}")
+        self.assertEqual(flt.load_project_excludes(flt.ROOT), set())
+
 
 class TestGenerateReport(TempRepoTestCase):
     def test_no_log_file_returns_sentinel(self):

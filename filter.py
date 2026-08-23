@@ -311,7 +311,7 @@ def load_project_excludes(root):
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return set()
     exclude = data.get("exclude", [])
     if not isinstance(exclude, list):

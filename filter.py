@@ -1281,9 +1281,10 @@ def main():
     other_modes = (
         args.diff or args.log or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
         or args.count or bool(args.semantic) or bool(args.image) or bool(args.task) or bool(args.input)
+        or args.ocr or args.format != "json" or args.lang != "eng"
     )
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--semantic/--image/--task/--input")
+        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--semantic/--image/--ocr/--format/--lang/--task/--input")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:

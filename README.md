@@ -133,6 +133,14 @@ Only one backend needs to run at a time — pick one with `--backend`.
   that wasn't in a payment receipt image, while `--ocr` read every real
   field correctly. Use `--image --task` (no `--ocr`) for describing a
   photo's scene/content instead, where OCR doesn't apply.
+- **`qwen2.5vl:7b` closes the gap:** re-tested the same payment receipt
+  with `qwen2.5vl:7b` loaded (same size class as `llava`, ~5GB) via plain
+  `--image --task` — every field (name, amount, phone, date, reference)
+  came back correct, matching `--ocr`'s accuracy with no hallucination.
+  If you're picking a vision model for Ollama, prefer `qwen2.5vl` over
+  `llava`; `--ocr` remains the more reliable fallback when precision on
+  text is critical (e.g. reading a financial reference), since even a
+  good vision model can misread a character a classic OCR engine won't.
 
 **Nothing auto-starts a service for you — not Ollama, not LM Studio.**
 Starting/stopping the backend is on you; the script only checks whether

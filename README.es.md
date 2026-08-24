@@ -138,6 +138,15 @@ Solo un backend necesita correr a la vez — elige uno con `--backend`.
   de pago real, mientras que `--ocr` leyó todos los campos correctamente.
   Usá `--image --task` (sin `--ocr`) para describir la escena/contenido de
   una foto, donde el OCR no aplica.
+- **`qwen2.5vl:7b` cierra la brecha:** re-probamos el mismo comprobante de
+  pago con `qwen2.5vl:7b` cargado (mismo tamaño que `llava`, ~5GB) vía
+  `--image --task` normal — todos los campos (nombre, monto, teléfono,
+  fecha, referencia) salieron correctos, igualando la precisión de
+  `--ocr` sin alucinación. Si vas a elegir un modelo de visión para
+  Ollama, preferí `qwen2.5vl` sobre `llava`; `--ocr` sigue siendo el
+  fallback más confiable cuando la precisión del texto es crítica (ej.
+  leer una referencia financiera), porque hasta un buen modelo de visión
+  puede confundir un carácter que un motor de OCR clásico no.
 
 **Nada arranca un servicio por ti — ni Ollama, ni LM Studio.** Prender o
 apagar el backend es tu responsabilidad; el script solo verifica si es

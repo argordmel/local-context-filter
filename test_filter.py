@@ -1387,5 +1387,195 @@ class TestReadDirectory(TempRepoTestCase):
             shutil.rmtree(outside, ignore_errors=True)
 
 
+class TestChunkLinesWithOverlap(unittest.TestCase):
+    def test_empty_input_yields_no_chunks(self):
+        self.assertEqual(flt.chunk_lines_with_overlap([]), [])
+
+    def test_single_chunk_when_shorter_than_chunk_size(self):
+        lines = [f"line{i}\n" for i in range(10)]
+        chunks = flt.chunk_lines_with_overlap(lines, chunk_lines=50, overlap=10)
+        self.assertEqual(len(chunks), 1)
+        start, end, text = chunks[0]
+        self.assertEqual((start, end), (1, 10))
+        self.assertEqual(text, "".join(lines))
+
+    def test_overlapping_chunks_cover_all_lines_with_correct_bounds(self):
+        lines = [f"{i}\n" for i in range(120)]
+        chunks = flt.chunk_lines_with_overlap(lines, chunk_lines=50, overlap=10)
+        # step = 40: chunks start at 1, 41, 81 (1-indexed)
+        starts_ends = [(s, e) for s, e, _ in chunks]
+        self.assertEqual(starts_ends, [(1, 50), (41, 90), (81, 120)])
+        # last chunk reaches exactly the end, no dangling remainder
+        self.assertEqual(chunks[-1][1], len(lines))
+
+    def test_no_infinite_loop_and_terminates(self):
+        lines = [f"{i}\n" for i in range(1000)]
+        chunks = flt.chunk_lines_with_overlap(lines, chunk_lines=50, overlap=10)
+        self.assertGreater(len(chunks), 0)
+        self.assertEqual(chunks[-1][1], 1000)
+
+
+class TestMakeSnippet(unittest.TestCase):
+    def test_takes_first_three_nonblank_lines(self):
+        text = "\n\ndef foo():\n    return 1\n\nclass Bar:\n    pass\n"
+        snippet = flt.make_snippet(text)
+        self.assertEqual(snippet, "def foo(): / return 1 / class Bar:")
+
+    def test_truncates_to_max_chars(self):
+        text = "x" * 500
+        self.assertEqual(len(flt.make_snippet(text, max_chars=50)), 50)
+
+
+class TestCosineSim(unittest.TestCase):
+    def test_identical_vectors_score_one(self):
+        self.assertAlmostEqual(flt.cosine_sim([1, 2, 3], [1, 2, 3]), 1.0)
+
+    def test_orthogonal_vectors_score_zero(self):
+        self.assertAlmostEqual(flt.cosine_sim([1, 0], [0, 1]), 0.0)
+
+    def test_opposite_vectors_score_negative_one(self):
+        self.assertAlmostEqual(flt.cosine_sim([1, 0], [-1, 0]), -1.0)
+
+    def test_zero_vector_returns_zero_not_a_crash(self):
+        self.assertEqual(flt.cosine_sim([0, 0], [1, 1]), 0.0)
+
+
+class TestSemanticIndexLoadSave(TempRepoTestCase):
+    def test_missing_index_returns_fresh_empty(self):
+        path = flt.semantic_index_path(self.tmpdir)
+        index = flt.load_semantic_index(path, "ollama", "nomic-embed-text")
+        self.assertEqual(index["files"], {})
+        self.assertEqual(index["backend"], "ollama")
+        self.assertEqual(index["model"], "nomic-embed-text")
+
+    def test_save_then_load_round_trips(self):
+        path = flt.semantic_index_path(self.tmpdir)
+        index = flt.load_semantic_index(path, "ollama", "nomic-embed-text")
+        index["files"]["a.py"] = {"mtime": 1.0, "size": 5, "chunks": [{"start": 1, "end": 1, "vector": [0.1, 0.2], "snippet": "x"}]}
+        flt.save_semantic_index(path, index)
+        reloaded = flt.load_semantic_index(path, "ollama", "nomic-embed-text")
+        self.assertEqual(reloaded["files"], index["files"])
+
+    def test_mismatched_model_discards_cached_index(self):
+        path = flt.semantic_index_path(self.tmpdir)
+        index = flt.load_semantic_index(path, "ollama", "nomic-embed-text")
+        index["files"]["a.py"] = {"mtime": 1.0, "size": 5, "chunks": []}
+        flt.save_semantic_index(path, index)
+        reloaded = flt.load_semantic_index(path, "ollama", "a-different-model")
+        self.assertEqual(reloaded["files"], {})
+
+    def test_corrupt_index_file_returns_fresh_empty(self):
+        path = flt.semantic_index_path(self.tmpdir)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write("not json")
+        index = flt.load_semantic_index(path, "ollama", "nomic-embed-text")
+        self.assertEqual(index["files"], {})
+
+
+class TestUpdateSemanticIndex(TempRepoTestCase):
+    def _fake_embed(self, backend, host, model, text):
+        # deterministic stub vector based on content length, avoids network
+        return [float(len(text)), 1.0]
+
+    def test_new_files_get_embedded_and_added(self):
+        self.write("a.py", "line1\nline2\n")
+        index = flt.load_semantic_index(flt.semantic_index_path(self.tmpdir), "ollama", "m")
+        with mock.patch.object(flt, "call_embed", side_effect=self._fake_embed):
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+        self.assertIn("a.py", index["files"])
+        self.assertEqual(len(index["files"]["a.py"]["chunks"]), 1)
+
+    def test_unchanged_file_is_not_reembedded(self):
+        self.write("a.py", "line1\nline2\n")
+        index = flt.load_semantic_index(flt.semantic_index_path(self.tmpdir), "ollama", "m")
+        with mock.patch.object(flt, "call_embed", side_effect=self._fake_embed) as embed_mock:
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+            first_call_count = embed_mock.call_count
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+            self.assertEqual(embed_mock.call_count, first_call_count)
+
+    def test_modified_file_is_reembedded(self):
+        path = self.write("a.py", "line1\n")
+        index = flt.load_semantic_index(flt.semantic_index_path(self.tmpdir), "ollama", "m")
+        with mock.patch.object(flt, "call_embed", side_effect=self._fake_embed) as embed_mock:
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+            calls_before = embed_mock.call_count
+            os.utime(path, (0, 0))  # force distinct mtime
+            with open(path, "w") as f:
+                f.write("line1\nline2\nline3\n")
+            os.utime(path, None)
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+            self.assertGreater(embed_mock.call_count, calls_before)
+
+    def test_deleted_file_is_removed_from_index(self):
+        path = self.write("a.py", "line1\n")
+        index = flt.load_semantic_index(flt.semantic_index_path(self.tmpdir), "ollama", "m")
+        with mock.patch.object(flt, "call_embed", side_effect=self._fake_embed):
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+            os.remove(path)
+            index = flt.update_semantic_index(self.tmpdir, flt.EXCLUDED_DIRS, "ollama", "http://x", "m", index)
+        self.assertNotIn("a.py", index["files"])
+
+
+class TestSemanticSearch(unittest.TestCase):
+    def _index(self):
+        return {"files": {
+            "a.py": {"chunks": [{"start": 1, "end": 5, "vector": [1.0, 0.0], "snippet": "match"}]},
+            "sub/b.py": {"chunks": [{"start": 1, "end": 5, "vector": [0.0, 1.0], "snippet": "nomatch"}]},
+        }}
+
+    def test_returns_top_k_by_score_descending(self):
+        results = flt.semantic_search(self._index(), [1.0, 0.0], top_k=10)
+        self.assertEqual(results[0][1], "a.py")
+        self.assertGreater(results[0][0], results[1][0])
+
+    def test_respects_top_k_limit(self):
+        results = flt.semantic_search(self._index(), [1.0, 0.0], top_k=1)
+        self.assertEqual(len(results), 1)
+
+    def test_allowed_prefix_filters_to_subtree(self):
+        results = flt.semantic_search(self._index(), [1.0, 1.0], top_k=10, allowed_prefix="sub")
+        self.assertEqual([r[1] for r in results], ["sub/b.py"])
+
+
+class TestCallEmbed(unittest.TestCase):
+    def _fake_response(self, payload):
+        body = json.dumps(payload).encode("utf-8")
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = io.BytesIO(body)
+        cm.__exit__.return_value = False
+        return cm
+
+    def test_ollama_returns_embedding_field(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response({"embedding": [0.1, 0.2]})):
+            vec = flt.call_embed("ollama", "http://x", "nomic-embed-text", "text")
+        self.assertEqual(vec, [0.1, 0.2])
+
+    def test_openai_compatible_returns_data_embedding(self):
+        payload = {"data": [{"embedding": [0.3, 0.4]}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response(payload)):
+            vec = flt.call_embed("lmstudio", "http://x", "some-model", "text")
+        self.assertEqual(vec, [0.3, 0.4])
+
+    def test_missing_vector_errors_cleanly(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_response({})):
+            with self.assertRaises(SystemExit) as ctx:
+                flt.call_embed("ollama", "http://x", "nomic-embed-text", "text")
+        self.assertIn("no embedding vector", str(ctx.exception))
+
+
+class TestRequireModelAvailable(unittest.TestCase):
+    def test_available_model_passes_silently(self):
+        with mock.patch.object(flt, "list_models", return_value={"nomic-embed-text"}):
+            flt.require_model_available("ollama", "http://x", "nomic-embed-text")  # no raise
+
+    def test_unavailable_model_exits_with_pull_hint(self):
+        with mock.patch.object(flt, "list_models", return_value={"other-model"}):
+            with self.assertRaises(SystemExit) as ctx:
+                flt.require_model_available("ollama", "http://x", "nomic-embed-text")
+        self.assertIn("ollama pull nomic-embed-text", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

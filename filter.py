@@ -58,6 +58,16 @@ content in the result, just "N path" per file plus a "N TOTAL" line. Add
 --task to have the local model narrow a large listing down to what's
 relevant.
 
+--semantic "QUERY" searches by meaning instead of exact match, across the
+whole project (not just --input, though --input scopes which results are
+shown). Requires --embed-model (no default — pick a dedicated embedding
+model, e.g. nomic-embed-text on ollama). Builds/updates a local index at
+.claude/semantic-index/index.json (mtime+size cache, only changed files
+are re-embedded), then embeds the query and returns the top --top-k (default
+10) chunks by cosine similarity as "path:start-end (score): snippet" lines.
+No Claude tokens spent on the search itself, only local embedding calls.
+Add --task to have the local model further filter the results.
+
 --report prints a summary of usage.json (total runs and estimated tokens
 saved, broken down by mode) — no LLM, cannot combine with anything else.
 
@@ -80,6 +90,7 @@ log can't be written.
 import argparse
 import fnmatch
 import json
+import math
 import os
 import re
 import shlex
@@ -696,6 +707,34 @@ MAX_CONTENT_CHARS = 24000  # ~6k tokens; keeps prompt+content under num_ctx belo
 NUM_CTX = 8192
 
 
+def _post_json(backend, url, payload, timeout=120):
+    """POST payload as JSON to url and return the parsed response.
+
+    Shared by call_llm and call_embed so both get identical error handling
+    (unreachable backend, HTTP error, malformed JSON) and error wording.
+    """
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+        )
+    except ValueError as e:
+        sys.exit(f"error: invalid --host URL '{url}': {e}")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        try:
+            body = json.loads(body).get("error", {}).get("message", body)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        sys.exit(f"error: {backend} at {url} returned {e.code}: {body}")
+    except urllib.error.URLError as e:
+        sys.exit(f"error: cannot reach {backend} at {url} ({e}).")
+    except json.JSONDecodeError:
+        sys.exit(f"error: {backend} at {url} returned a response that isn't valid JSON")
+
+
 def call_llm(backend, host, model, task, content, max_words):
     if len(content) > MAX_CONTENT_CHARS:
         print(
@@ -736,26 +775,7 @@ def call_llm(backend, host, model, task, content, max_words):
             "stream": False,
         }
 
-    try:
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
-        )
-    except ValueError as e:
-        sys.exit(f"error: invalid --host URL '{url}': {e}")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        try:
-            body = json.loads(body).get("error", {}).get("message", body)
-        except (json.JSONDecodeError, AttributeError):
-            pass
-        sys.exit(f"error: {backend} at {url} returned {e.code}: {body}")
-    except urllib.error.URLError as e:
-        sys.exit(f"error: cannot reach {backend} at {url} ({e}).")
-    except json.JSONDecodeError:
-        sys.exit(f"error: {backend} at {url} returned a response that isn't valid JSON")
+    data = _post_json(backend, url, payload)
 
     if backend == "ollama":
         return data.get("response", "").strip()
@@ -763,6 +783,185 @@ def call_llm(backend, host, model, task, content, max_words):
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError):
         sys.exit(f"error: {backend} at {url} returned an unexpected response shape: {json.dumps(data)[:300]}")
+
+
+CHUNK_LINES = 50
+CHUNK_OVERLAP = 10
+SEMANTIC_INDEX_RELPATH = os.path.join(".claude", "semantic-index", "index.json")
+
+
+def call_embed(backend, host, model, text):
+    """Embed text via the backend's embedding endpoint, returning a vector
+    (list of floats). Ollama: POST /api/embeddings. lmstudio/openai
+    (OpenAI-compatible): POST /v1/embeddings.
+    """
+    if backend == "ollama":
+        url = f"{host}/api/embeddings"
+        payload = {"model": model, "prompt": text}
+    else:
+        url = f"{host}/v1/embeddings"
+        payload = {"model": model, "input": text}
+    data = _post_json(backend, url, payload)
+    if backend == "ollama":
+        vector = data.get("embedding")
+    else:
+        try:
+            vector = data["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError):
+            vector = None
+    if not vector:
+        sys.exit(f"error: {backend} at {url} returned no embedding vector for model '{model}'")
+    return vector
+
+
+def require_model_available(backend, host, model):
+    """Exit with a clear error unless `model` is available on backend.
+
+    Unlike resolve_model, never auto-picks a fallback — an embedding model
+    is a deliberate choice (--embed-model has no default), so an invalid
+    or missing one is always an error, not a silent substitution.
+    """
+    names = list_models(backend, host)
+    if model not in names:
+        if backend == "ollama":
+            fix = f"`ollama pull {model}`"
+        elif backend == "lmstudio":
+            fix = "load it in LM Studio first"
+        else:
+            fix = "load it on the server first"
+        sys.exit(f"error: model '{model}' not available on {backend}. {fix} (available: {', '.join(sorted(names)) or 'none'}).")
+
+
+def cosine_sim(a, b):
+    """Cosine similarity between two equal-length numeric vectors, pure Python
+    (no numpy dependency). Returns 0.0 if either vector is all-zero.
+    """
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def chunk_lines_with_overlap(lines, chunk_lines=CHUNK_LINES, overlap=CHUNK_OVERLAP):
+    """Split a list of lines into overlapping (start, end, text) chunks,
+    1-indexed inclusive line numbers. Empty input yields no chunks.
+    """
+    step = chunk_lines - overlap
+    n = len(lines)
+    chunks = []
+    i = 0
+    while i < n:
+        end = min(i + chunk_lines, n)
+        chunks.append((i + 1, end, "".join(lines[i:end])))
+        if end == n:
+            break
+        i += step
+    return chunks
+
+
+def make_snippet(text, max_chars=200):
+    """First up to 3 non-blank lines of a chunk, joined and truncated —
+    just enough to eyeball relevance without re-reading the file.
+    """
+    snippet_lines = [ln.strip() for ln in text.splitlines() if ln.strip()][:3]
+    return " / ".join(snippet_lines)[:max_chars]
+
+
+def semantic_index_path(root):
+    return os.path.join(root, SEMANTIC_INDEX_RELPATH)
+
+
+def load_semantic_index(path, backend, model):
+    """Load the semantic index at path, or a fresh empty one if missing,
+    corrupt, or built for a different backend/model/chunking config —
+    vectors from a different embedding model aren't comparable, so a
+    mismatch means starting over rather than mixing incompatible vectors.
+    """
+    empty = {
+        "backend": backend, "model": model,
+        "chunk_lines": CHUNK_LINES, "chunk_overlap": CHUNK_OVERLAP,
+        "files": {},
+    }
+    if not os.path.isfile(path):
+        return empty
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return empty
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+        return empty
+    if (data.get("backend") != backend or data.get("model") != model
+            or data.get("chunk_lines") != CHUNK_LINES or data.get("chunk_overlap") != CHUNK_OVERLAP):
+        return empty
+    return data
+
+
+def save_semantic_index(path, index):
+    """Best-effort save — a write failure (e.g. read-only disk) doesn't
+    break the search itself, just means the next run rebuilds from scratch.
+    """
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(index, f)
+    except OSError:
+        pass
+
+
+def update_semantic_index(root, excluded_dirs, backend, host, embed_model, index):
+    """Refresh index in place against the files currently on disk under root:
+    unchanged files (same mtime+size) are skipped, new/modified files are
+    re-chunked and re-embedded, and entries for deleted files are dropped.
+    """
+    seen = set()
+    for full, rel in _iter_scan_targets(root, excluded_dirs):
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except (UnicodeDecodeError, OSError):
+            continue
+        try:
+            stat = os.stat(full)
+        except OSError:
+            continue
+        seen.add(rel)
+        existing = index["files"].get(rel)
+        if existing and existing.get("mtime") == stat.st_mtime and existing.get("size") == stat.st_size:
+            continue
+        new_chunks = []
+        for start, end, text in chunk_lines_with_overlap(lines):
+            vector = call_embed(backend, host, embed_model, text)
+            new_chunks.append({"start": start, "end": end, "vector": vector, "snippet": make_snippet(text)})
+        index["files"][rel] = {"mtime": stat.st_mtime, "size": stat.st_size, "chunks": new_chunks}
+    for rel in list(index["files"]):
+        if rel not in seen:
+            del index["files"][rel]
+    return index
+
+
+def semantic_search(index, query_vector, top_k, allowed_prefix=None):
+    """Rank every chunk in index by cosine similarity to query_vector,
+    return the top_k as (score, rel_path, start_line, end_line, snippet).
+
+    allowed_prefix, if given, restricts results to rel paths equal to it
+    or nested under it (a relative --input scoping which results show,
+    without narrowing what the index itself covers).
+    """
+    results = []
+    for rel, entry in index.get("files", {}).items():
+        if allowed_prefix is not None and rel != allowed_prefix and not rel.startswith(allowed_prefix + os.sep):
+            continue
+        for chunk in entry.get("chunks", []):
+            vector = chunk.get("vector")
+            if not vector:
+                continue
+            score = cosine_sim(query_vector, vector)
+            results.append((score, rel, chunk["start"], chunk["end"], chunk.get("snippet", "")))
+    results.sort(key=lambda r: -r[0])
+    return results[:top_k]
 
 
 def compute_file_coverage(matches, output):
@@ -821,6 +1020,9 @@ def main():
     ap.add_argument("--find", metavar="PATTERN", help="find files/dirs by basename glob (like `find -iname`) under --input, no LLM")
     ap.add_argument("--run", metavar="COMMAND", help="run an npm/npx/pnpm/yarn command (e.g. 'npm install') at --input (default: cwd) and print its output; no LLM without --task")
     ap.add_argument("--count", action="store_true", help="count lines per file under --input (default: cwd), like `wc -l`; no LLM without --task")
+    ap.add_argument("--semantic", metavar="QUERY", help="search by meaning across the whole project (--input only scopes shown results); requires --embed-model")
+    ap.add_argument("--embed-model", help="embedding model tag/id, required with --semantic (no default)")
+    ap.add_argument("--top-k", type=int, default=10, metavar="N", help="max results for --semantic (default: 10)")
     ap.add_argument("--report", action="store_true", help="print a summary of usage.json (local totals); cannot combine with anything else")
     ap.add_argument("--clean", action="store_true", help="delete usage.json; cannot combine with anything else")
     ap.add_argument("--backend", choices=["ollama", "lmstudio", "openai"], default="ollama", help="local LLM server (default: ollama)")
@@ -831,10 +1033,10 @@ def main():
 
     other_modes = (
         args.diff or args.log or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
-        or args.count or bool(args.task) or bool(args.input)
+        or args.count or bool(args.semantic) or bool(args.task) or bool(args.input)
     )
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--task/--input")
+        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--semantic/--task/--input")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:
@@ -850,8 +1052,12 @@ def main():
         print("USAGE_LOG_CLEARED" if existed else "NO_USAGE_DATA")
         return
 
-    if sum([args.diff, args.log, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count]) > 1:
-        ap.error("--diff, --log, --grep, --ls, --find, --run, and --count are mutually exclusive")
+    if sum([args.diff, args.log, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count, bool(args.semantic)]) > 1:
+        ap.error("--diff, --log, --grep, --ls, --find, --run, --count, and --semantic are mutually exclusive")
+    if args.semantic and not args.embed_model:
+        ap.error("--embed-model is required with --semantic")
+    if args.semantic and args.top_k < 1:
+        ap.error("--top-k must be a positive integer")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
@@ -974,6 +1180,35 @@ def main():
         log_usage("run", args.backend, len(output), len(result))
         return
 
+    if args.semantic:
+        require_model_available(args.backend, host, args.embed_model)
+        root = confine_to_root(args.input) if args.input else ROOT
+        require_existing_input(args.input, root)
+        index_path = semantic_index_path(CONFINE_ROOT)
+        index = load_semantic_index(index_path, args.backend, args.embed_model)
+        index = update_semantic_index(CONFINE_ROOT, excluded_dirs, args.backend, host, args.embed_model, index)
+        save_semantic_index(index_path, index)
+        query_vector = call_embed(args.backend, host, args.embed_model, args.semantic)
+        allowed_prefix = None
+        if args.input:
+            rel_input = os.path.relpath(root, CONFINE_ROOT)
+            allowed_prefix = None if rel_input == "." else rel_input
+        results = semantic_search(index, query_vector, args.top_k, allowed_prefix)
+        if not results:
+            print("NO_MATCHES")
+            log_usage("semantic", None, 0, 0)
+            return
+        joined = "\n".join(f"{rel}:{start}-{end} ({score:.2f}): {snippet}" for score, rel, start, end, snippet in results)
+        if not args.task:
+            print(joined)
+            log_usage("semantic", args.backend, 0, len(joined))
+            return
+        model = resolve_model(args.backend, host, args.model)
+        result = call_llm_chunked(args.backend, host, model, args.task, joined, args.max_words)
+        print(result)
+        log_usage("semantic", args.backend, len(joined), len(result))
+        return
+
     if args.grep:
         root = confine_to_root(args.input) if args.input else ROOT
         require_existing_input(args.input, root)
@@ -1002,7 +1237,7 @@ def main():
         return
 
     if not args.task:
-        ap.error("--task is required unless --grep/--ls/--find is used")
+        ap.error("--task is required unless --grep/--ls/--find/--semantic is used")
     model = resolve_model(args.backend, host, args.model)
     content = read_input(args.input)
     result = call_llm_chunked(args.backend, host, model, args.task, content, args.max_words)

@@ -192,6 +192,10 @@ python3 ~/.claude/skills/local-context-filter/filter.py --run "yarn install" --t
 # usage summary / wipe the local usage log
 python3 ~/.claude/skills/local-context-filter/filter.py --report
 python3 ~/.claude/skills/local-context-filter/filter.py --clean
+
+# semantic search — find code by meaning, not literal string (needs --embed-model)
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --semantic "code that handles user authentication" --embed-model nomic-embed-text
 ```
 
 Full flag reference and behavior notes: [SKILL.md](SKILL.md).

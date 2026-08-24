@@ -5,7 +5,7 @@
 Una skill para [Claude Code](https://claude.com/claude-code) (`local-context-filter`) que
 delega contexto grande/crudo a un LLM **local** antes de que llegue a Claude.
 
-Pensala como darle a Claude un "explorador" local: en vez de volcar miles de líneas de resultados de grep, un directorio entero, o un log ruidoso a la conversación, un modelo local (o Python plano para búsqueda exacta) hace el trabajo pesado y devuelve solo lo relevante. Claude igual puede abrir y validar los archivos reales cuando la precisión importa — no se le pide confiar ciegamente en la síntesis local.
+Piénsala como darle a Claude un "explorador" local: en vez de volcar miles de líneas de resultados de grep, un directorio entero, o un log ruidoso a la conversación, un modelo local (o Python plano para búsqueda exacta) hace el trabajo pesado y devuelve solo lo relevante. Claude igual puede abrir y validar los archivos reales cuando la precisión importa — no se le pide confiar ciegamente en la síntesis local.
 
 Brilla para **búsqueda, orientación y resúmenes de diff** — encontrar cosas, mapear un codebase, ver qué cambió. Se usa menos en decisiones complejas de arquitectura, donde Claude necesita ver la evidencia real directo, no una versión filtrada de ella.
 
@@ -14,7 +14,7 @@ Modos:
 - **`--grep`** — búsqueda regex recursiva real (como `grep -rn`), con raíz en
   el directorio actual, sin escapar hacia arriba. Sin LLM, cero tokens de
   Claude — la opción más barata y precisa cuando sabes el string/patrón
-  literal que buscás.
+  literal que buscas.
 - **`--task`** (modo filtro LLM) — pasa un archivo/directorio/stdin por un
   modelo local con una descripción de tarea; el modelo elimina todo lo
   irrelevante y solo el resultado compacto entra al contexto de Claude.
@@ -30,13 +30,13 @@ Modos:
   defecto) en el directorio actual (o acotado a `--input`); log crudo
   (gratis) sin `--task`, o resumido por el modelo con `--task`.
 - **`--ls`** — lista recursivamente archivos/directorios bajo `--input`
-  (por defecto: directorio actual), sin LLM, cero tokens de Claude; usala
+  (por defecto: directorio actual), sin LLM, cero tokens de Claude; úsala
   en vez de `bash ls`/`tree` para explorar la estructura del proyecto.
 - **`--find`** — encuentra archivos/directorios por nombre (glob, como
-  `find -iname`), sin LLM, cero tokens de Claude; usala en vez de
+  `find -iname`), sin LLM, cero tokens de Claude; úsala en vez de
   `bash find` para localizar un archivo por nombre.
 - **`--count`** — cuenta líneas por archivo bajo `--input` (como `wc -l`),
-  sin LLM, cero tokens de Claude; usala en vez de `bash wc -l`.
+  sin LLM, cero tokens de Claude; úsala en vez de `bash wc -l`.
 - **`--run`** — corre un comando `npm`/`npx`/`pnpm`/`yarn` (solo esos
   cuatro binarios están permitidos) e imprime su salida; cruda (gratis)
   sin `--task`, o filtrada por el modelo con `--task`.
@@ -45,7 +45,7 @@ Modos:
 
 `--input` normalmente funciona relativo a tu directorio actual, pero
 también acepta una ruta absoluta o expandida con `~` en otro lado dentro
-de tu home (ej. `--input ~/otro-proyecto`) — así podés apuntar cualquier
+de tu home (ej. `--input ~/otro-proyecto`) — así puedes apuntar cualquier
 modo a otro proyecto sin hacer `cd` primero. Ver [Seguridad](#seguridad)
 para la regla exacta. Un `--input` que no existe es un error para
 `--grep`/`--find`/`--count`, distinto de un resultado real de "nada
@@ -71,7 +71,7 @@ Con eso alcanza — Claude Code auto-descubre cualquier skill bajo
 `~/.claude/skills/`. No hay paso de registro adicional.
 
 Si ya tienes un `~/.claude/skills/local-context-filter` (de un setup manual
-anterior), eliminalo primero, o clonalo en otro lado y symlinkealo:
+anterior), elimínalo primero, o clónalo en otro lado y symlinkéalo:
 
 ```bash
 git clone git@github.com:argordmel/local-context-filter.git ~/code/local-context-filter
@@ -108,7 +108,7 @@ consulta, cae al primer resultado de `/v1/models`.
 **Sin modelo default hardcodeado para el backend openai genérico.** Sin
 `--model`, toma el primer modelo en el orden que reporta `/v1/models` —
 no hay forma estándar de preguntarle a un servidor OpenAI-compatible
-genérico cuál modelo está "cargado". Pasá `--model` explícito si quieres
+genérico cuál modelo está "cargado". Pasa `--model` explícito si quieres
 uno específico.
 
 Solo un backend necesita correr a la vez — elige uno con `--backend`.
@@ -197,6 +197,10 @@ python3 ~/.claude/skills/local-context-filter/filter.py --run "yarn install" --t
 # resumen de uso / borrar el log local de uso
 python3 ~/.claude/skills/local-context-filter/filter.py --report
 python3 ~/.claude/skills/local-context-filter/filter.py --clean
+
+# búsqueda semántica — encuentra código por significado, no string literal (necesita --embed-model)
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --semantic "código que maneja autenticación de usuario" --embed-model nomic-embed-text
 ```
 
 Referencia completa de flags y comportamiento: [SKILL.md](SKILL.md).
@@ -205,13 +209,13 @@ Referencia completa de flags y comportamiento: [SKILL.md](SKILL.md).
 
 Escribir la ruta completa `python3 ~/.claude/skills/local-context-filter/filter.py`
 cada vez es tedioso para comandos sueltos rápidos como `--report`/`--clean`.
-Agregá un alias a tu shell rc (`~/.zshrc`, `~/.bashrc`):
+Agrega un alias a tu shell rc (`~/.zshrc`, `~/.bashrc`):
 
 ```bash
 alias skill-local-context='python3 ~/.claude/skills/local-context-filter/filter.py'
 ```
 
-Recargá el shell (`source ~/.zshrc`) y usalo directo:
+Recarga el shell (`source ~/.zshrc`) y úsalo directo:
 
 ```bash
 skill-local-context --report
@@ -219,7 +223,7 @@ skill-local-context --clean
 skill-local-context --grep "TODO" --input app
 ```
 
-Esto es comodidad para vos corriendo comandos a mano — Claude igual
+Esto es comodidad para ti corriendo comandos a mano — Claude igual
 invoca `filter.py` por su ruta completa sin importar los alias de tu
 shell, porque no carga tus archivos rc de shell interactivo.
 
@@ -262,7 +266,7 @@ gitignored, nunca sale de tu máquina. Cada entrada es solo conteos:
 `{ts, mode, backend, chars_in, chars_out, tokens_saved_est}` — sin
 contenido de archivos, rutas, ni el texto de `--task`. `tokens_saved_est`
 es una aproximación tosca (`chars/4`) al tokenizer real, útil como
-tendencia, no como cifra exacta. Sobrescribí la ruta con
+tendencia, no como cifra exacta. Sobrescribe la ruta con
 `LOCAL_CONTEXT_FILTER_LOG=/ruta/al/archivo`; si no se puede escribir, la
 corrida igual funciona — el fallo de log es silencioso y nunca bloquea el
 comando. `--report` imprime totales (por modo); `--clean` borra el log.
@@ -270,14 +274,14 @@ comando. `--report` imprime totales (por modo); `--clean` borra el log.
 **Auto-mantenido, sin trabajo manual:** una vez que el log pasa las 6000
 líneas se recorta automáticamente a las 5000 más recientes en la próxima
 corrida — nunca crece sin límite, y no necesitas acordarte de correr
-`--clean` vos mismo. `--clean` sigue ahí para cuando realmente quieras
+`--clean` tú mismo. `--clean` sigue ahí para cuando realmente quieras
 resetear el contador a cero.
 
 ## Excludes por proyecto
 
 `--grep`, `--ls`, `--find`, y `--count` saltan `.git`, `node_modules`, `dist`,
 `build`, `.venv`, `__pycache__`, `.next`, `coverage` por defecto. Para
-saltar más directorios en un proyecto sin tocar la skill, agregá
+saltar más directorios en un proyecto sin tocar la skill, agrega
 `.claude/local-context-filter.json` en la raíz del proyecto:
 
 ```json
@@ -300,10 +304,10 @@ imprime dos señales pensadas para detectar cuando se equivoca:
   equivocado como sí a la confianza autoreportada del modelo.
 
 Cuando la cobertura queda incompleta, no trates el resumen como
-definitivo — corré `--grep` de nuevo sin `--task` (gratis, exacto) o leé
+definitivo — corre `--grep` de nuevo sin `--task` (gratis, exacto) o lee
 los archivos faltantes directo antes de actuar sobre eso. Justo por esto
 la skill es más fuerte para **búsqueda, orientación y resúmenes de
-diff**: Claude siempre puede volver a abrir los archivos reales. Confiá
+diff**: Claude siempre puede volver a abrir los archivos reales. Confía
 menos en ella para decisiones complejas de arquitectura, donde el modelo
 principal debería ver la evidencia directa en vez de una síntesis del
 modelo local.
@@ -318,7 +322,7 @@ modelo local.
   de tu home (`$HOME`) — cualquier cosa fuera de `$HOME` (`/etc`, el home
   de otro usuario, `/`, ...) se rechaza con error claro; una ruta dentro
   de `$HOME` se vuelve su propio límite de confianza para ese comando en
-  vez del cwd, así podés apuntar a otro proyecto sin hacer `cd` primero.
+  vez del cwd, así puedes apuntar a otro proyecto sin hacer `cd` primero.
   Los symlinks que apunten fuera del límite activo son rechazados en
   cualquier caso — incluyendo uno encontrado *dentro* de un árbol ya
   confinado durante un recorrido recursivo (`--grep`, `--ls`, `--find`,
@@ -336,8 +340,8 @@ modelo local.
   vez invocados: los scripts `install`/postinstall corren código
   arbitrario del paquete (igual que correr ese install a mano), y el
   subproceso hereda todo el entorno del padre, incluyendo cualquier
-  secreto que haya ahí. Solo apuntá `--run` a un `package.json` en el que
-  confíes, igual que confiarías en correr `npm install` vos mismo
+  secreto que haya ahí. Solo apunta `--run` a un `package.json` en el que
+  confíes, igual que confiarías en correr `npm install` tú mismo
   directo. La salida cruda de `--run` (sin `--task`) que supere ~24k
   caracteres se trunca con warning en stderr, mismo presupuesto que el
   modo filtro LLM de abajo.

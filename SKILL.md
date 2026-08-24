@@ -21,6 +21,8 @@ compact result — that's what goes into Claude's context, not the raw blob.
   burn context on noise
 - Exact pattern search across a whole project (`--grep`, see below) —
   cheaper and more precise than the LLM-filter mode for this
+- Search by meaning instead of exact string (`--semantic`, see below) —
+  when you don't know the literal term but know what the code should do
 - Reviewing/summarizing the current working tree changes (`--diff`, see
   below) without pasting a large `git diff` into the conversation
 - Reviewing/summarizing commit history (`--log`, see below) without
@@ -176,6 +178,44 @@ without `--task` (or read the missing files directly) before treating the
 answer as settled, especially for anything beyond straightforward search/
 navigation/diff-summary use — for real architecture decisions, look at
 the evidence yourself rather than trusting a local model's synthesis of it.
+
+### Semantic search (`--semantic`) — search by meaning, not literal string
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py \
+  --semantic "code that handles user authentication" \
+  --embed-model nomic-embed-text
+```
+
+Finds code by meaning instead of exact text — useful when you don't know
+the literal name/string to grep for. Requires `--embed-model` (no
+default — pick a dedicated embedding model, e.g. `nomic-embed-text` on
+Ollama; `ollama pull nomic-embed-text` once, or `ollama serve
+--embeddings` if your server rejects `/api/embeddings`). Reuses
+`--backend`/`--host` like every other mode.
+
+Searches the **whole project** (not just `--input`) — `--input`, if
+given, only narrows which results are shown, since narrowing what gets
+indexed would mean rebuilding the index every time `--input` changes.
+Builds/updates a local index at `.claude/semantic-index/index.json` on
+every run: unchanged files (same mtime+size) are skipped, only new or
+modified files are re-chunked (50-line blocks, 10-line overlap) and
+re-embedded — first run on a large project is slow, later runs are fast.
+Switching `--embed-model` or `--backend` invalidates the cached index
+automatically (vectors from different models aren't comparable) and
+triggers a full rebuild.
+
+Prints the top `--top-k` (default 10) chunks by cosine similarity as
+`path:start-end (score): snippet` — analogous to `--grep`'s `path:line:
+content`. Prints `NO_MATCHES` if the index is empty. Add `--task` to
+have the local model further filter/summarize the results, same as
+other modes. Mutually exclusive with `--grep`/`--diff`/`--log`/`--ls`/
+`--find`/`--count`/`--run`.
+
+**When to use over `--grep`:** `--grep` is exact and free of any local
+model call — always prefer it when you know the literal string/regex.
+Reach for `--semantic` only when you don't: e.g. "where does this app
+check permissions" with no known function name to grep for.
 
 ### Working-tree diff (`--diff`)
 
@@ -343,6 +383,9 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--find` | — | glob pattern for basename search (like `find -iname`); no-LLM without `--task` |
 | `--count` | off | count lines per file under `--input` (like `wc -l`); no-LLM without `--task` |
 | `--run` | — | run an `npm`/`npx`/`pnpm`/`yarn` command; no-LLM without `--task` |
+| `--semantic` | — | search by meaning (query text); needs `--embed-model`; no-LLM without `--task` |
+| `--embed-model` | none (required with `--semantic`) | embedding model tag/id, e.g. `nomic-embed-text` |
+| `--top-k` | 10 | max results for `--semantic` |
 | `--report` | off | print a usage.json summary (total runs, tokens saved by mode); cannot combine with anything else |
 | `--clean` | off | delete usage.json; cannot combine with anything else |
 | `--backend` | `ollama` | local LLM server: `ollama`, `lmstudio`, or `openai` (generic) |

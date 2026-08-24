@@ -1189,6 +1189,39 @@ def call_vision_llm(backend, host, model, task, image_b64, image_format, max_wor
         sys.exit(f"error: {backend} at {url} returned an unexpected response shape: {json.dumps(data)[:300]}")
 
 
+OCR_TIMEOUT = 60
+
+
+def run_tesseract(image_path, lang="eng"):
+    """Run the tesseract CLI on image_path and return the extracted raw
+    text (stdout), or exit with a clear error if tesseract isn't
+    installed, the language pack isn't available, or it fails/times out.
+
+    Uses the CLI directly (not pytesseract) so --ocr needs no extra Python
+    dependency beyond the `tesseract` binary itself
+    (`brew install tesseract`, or `apt install tesseract-ocr`).
+    """
+    try:
+        result = subprocess.run(
+            ["tesseract", image_path, "stdout", "-l", lang],
+            capture_output=True, text=True, timeout=OCR_TIMEOUT,
+        )
+    except FileNotFoundError:
+        sys.exit("error: 'tesseract' not found on PATH. Install it: `brew install tesseract` (macOS) or `apt install tesseract-ocr` (Linux).")
+    except subprocess.TimeoutExpired:
+        sys.exit(f"error: tesseract timed out after {OCR_TIMEOUT}s")
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        if "Failed loading language" in stderr:
+            sys.exit(
+                f"error: tesseract language pack '{lang}' not installed. "
+                f"Install it (e.g. `brew install tesseract-lang` on macOS for extra languages, "
+                f"or download the .traineddata into tesseract's tessdata dir) or pass --lang eng."
+            )
+        sys.exit(f"error: tesseract failed: {stderr}")
+    return result.stdout
+
+
 def format_metadata_md(meta):
     """Render an --image metadata dict as Markdown."""
     lines = [f"# {meta['file']}", ""]
@@ -1196,6 +1229,10 @@ def format_metadata_md(meta):
     lines.append(f"- Mode: {meta.get('mode')}")
     lines.append(f"- Dimensions: {meta.get('width')}x{meta.get('height')}")
     lines.append(f"- Size: {meta.get('size_bytes')} bytes")
+    if "ocr_text" in meta:
+        lines.append("")
+        lines.append("## OCR Text")
+        lines.append(meta["ocr_text"] if meta["ocr_text"] else "_(no text detected)_")
     if "description" in meta:
         lines.append("")
         lines.append("## Description")
@@ -1228,6 +1265,8 @@ def main():
     ap.add_argument("--count", action="store_true", help="count lines per file under --input (default: cwd), like `wc -l`; no LLM without --task")
     ap.add_argument("--image", metavar="PATH", help="extract image metadata (EXIF/dimensions) via Pillow, no LLM; add --task to also get a vision-model description")
     ap.add_argument("--format", choices=["json", "md"], default="json", help="output format for --image (default: json)")
+    ap.add_argument("--ocr", action="store_true", help="run classic OCR (tesseract) on --image and include the raw text; with --task, extracts from that text via the text model instead of a vision model")
+    ap.add_argument("--lang", default="eng", help="tesseract language(s) for --ocr, e.g. 'eng', 'spa', 'spa+eng' (default: eng)")
     ap.add_argument("--semantic", metavar="QUERY", help="search by meaning across the whole project (--input only scopes shown results); requires --embed-model")
     ap.add_argument("--embed-model", help="embedding model tag/id, required with --semantic (no default)")
     ap.add_argument("--top-k", type=int, default=10, metavar="N", help="max results for --semantic (default: 10)")
@@ -1268,6 +1307,10 @@ def main():
         ap.error("--top-k must be a positive integer")
     if args.format != "json" and not args.image:
         ap.error("--format is only used with --image")
+    if args.ocr and not args.image:
+        ap.error("--ocr is only used with --image")
+    if args.lang != "eng" and not args.ocr:
+        ap.error("--lang is only used with --ocr")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
@@ -1426,12 +1469,21 @@ def main():
         if not os.path.isfile(image_path):
             sys.exit(f"error: '{args.image}' does not exist or is not a file")
         meta = extract_image_metadata(image_path)
+        if args.ocr:
+            meta["ocr_text"] = run_tesseract(image_path, args.lang).strip()
         if args.task:
-            model = resolve_model(args.backend, host, args.model, require_vision=True)
-            b64 = image_to_base64(image_path)
-            meta["description"] = call_vision_llm(
-                args.backend, host, model, args.task, b64, meta.get("format"), args.max_words
-            )
+            if args.ocr:
+                if meta["ocr_text"]:
+                    model = resolve_model(args.backend, host, args.model)
+                    meta["description"] = call_llm_chunked(args.backend, host, model, args.task, meta["ocr_text"], args.max_words)
+                else:
+                    print("warning: --ocr found no text, skipping --task extraction (nothing to feed the text model)", file=sys.stderr)
+            else:
+                model = resolve_model(args.backend, host, args.model, require_vision=True)
+                b64 = image_to_base64(image_path)
+                meta["description"] = call_vision_llm(
+                    args.backend, host, model, args.task, b64, meta.get("format"), args.max_words
+                )
         output = json.dumps(meta, indent=2, ensure_ascii=False) if args.format == "json" else format_metadata_md(meta)
         print(output)
         log_usage("image", args.backend if args.task else None, os.path.getsize(image_path), len(output))

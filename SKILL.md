@@ -363,6 +363,37 @@ rules as `--task` elsewhere apply if it's unreachable. Mutually exclusive
 with `--grep`/`--diff`/`--log`/`--ls`/`--find`/`--run`/`--count`/`--semantic`.
 `--format` is only valid together with `--image`.
 
+**`--ocr` — classic OCR instead of a vision model, for reading text out of
+an image (receipts, screenshots, scanned docs):**
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --image receipt.png --ocr
+python3 ~/.claude/skills/local-context-filter/filter.py --image receipt.png --ocr --lang spa
+python3 ~/.claude/skills/local-context-filter/filter.py --image receipt.png --ocr --task "extract amount, recipient, and date"
+```
+
+Runs the `tesseract` CLI (not the vision model) and adds the raw extracted
+text as an `ocr_text` field/section — no LLM involved without `--task`.
+Requires the `tesseract` binary (`brew install tesseract` on macOS,
+`apt install tesseract-ocr` on Linux); `--lang` picks the language pack
+(default `eng` — install more with `brew install tesseract-lang` on macOS,
+e.g. for `--lang spa` or `--lang spa+eng`).
+
+**Why this beats `--task` alone for reading text:** small local vision
+models (7B-class `llava` etc.) are unreliable OCR — in testing, `llava`
+outright hallucinated a credit card number that wasn't in a Nequi payment
+receipt image, while `--ocr` extracted every real field (name, amount,
+phone, date, reference) correctly with zero hallucination. Use plain
+`--task` (no `--ocr`) for describing a photo's content/scene; use `--ocr`
+whenever the image is mostly text you need read accurately.
+
+Combine `--ocr` with `--task` to have the **text** model (not a vision
+model) extract/structure specific fields from the OCR'd text — this
+reuses the same reliable text-filtering path as every other mode instead
+of trusting a vision model's read of the text. If OCR finds no text at
+all, `--task` extraction is skipped with a stderr warning (nothing to
+feed the text model) rather than silently falling back to the vision path.
+
 **Auto-picking the vision model when two models are loaded:** without
 `--model`, `--image --task` restricts auto-pick to model names that look
 vision-capable (substring match on `llava`, `vision`, `vl`, `bakllava`,
@@ -421,6 +452,8 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--run` | — | run an `npm`/`npx`/`pnpm`/`yarn` command; no-LLM without `--task` |
 | `--image` | — | path to an image; extracts EXIF/dimensions, no-LLM without `--task` |
 | `--format` | `json` | output format for `--image`: `json` or `md` |
+| `--ocr` | off | run tesseract OCR on `--image` instead of a vision model for `--task` |
+| `--lang` | `eng` | tesseract language(s) for `--ocr`, e.g. `spa`, `spa+eng` |
 | `--semantic` | — | search by meaning (query text); needs `--embed-model`; no-LLM without `--task` |
 | `--embed-model` | none (required with `--semantic`) | embedding model tag/id, e.g. `nomic-embed-text` |
 | `--top-k` | 10 | max results for `--semantic` |

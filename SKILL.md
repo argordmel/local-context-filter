@@ -1,6 +1,6 @@
 ---
 name: local-context-filter
-description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), to find a file by name (glob, `--find`), to count lines per file (`--count`), to summarize commit history (`--log`), or to run an npm/npx/pnpm/yarn command (`--run`), all without any of it entering Claude's context.
+description: Use when you need to feed a large file, log dump, or raw text blob into a Claude conversation but only part of it is relevant — filters/summarizes it through a local model (Ollama, LM Studio, or any OpenAI-compatible server) first so Claude receives only what matters, saving context tokens. Also use for an exact recursive text/regex search (grep-style, `--grep`), to list a project's file/directory tree (`--ls`), to find a file by name (glob, `--find`), to count lines per file (`--count`), to summarize commit history (`--log`), to run an npm/npx/pnpm/yarn command (`--run`), or to extract image metadata/EXIF (and optionally a vision-model description) as JSON or Markdown (`--image`), all without any of it entering Claude's context.
 ---
 
 # Local Context Filter
@@ -35,6 +35,8 @@ compact result — that's what goes into Claude's context, not the raw blob.
   instead of `bash wc -l` for the same reason
 - Running an `npm`/`npx`/`pnpm`/`yarn` command and filtering noisy install
   output down to real errors (`--run`, see below)
+- Extracting an image's metadata (EXIF, GPS, dimensions) as JSON/Markdown,
+  optionally with a vision-model description (`--image`, see below)
 
 **Don't use** the LLM-filter mode (`--task` without `--grep`) for content
 that's already small, or when you need the exact full content verbatim
@@ -340,6 +342,40 @@ environment, including any secrets in it (API keys, tokens). Only use
 `--run` against `package.json`s you trust, same as you would running
 `npm install` yourself directly.
 
+### Image metadata (`--image`) — no LLM by default
+
+```bash
+python3 ~/.claude/skills/local-context-filter/filter.py --image photo.jpg
+python3 ~/.claude/skills/local-context-filter/filter.py --image photo.jpg --format md
+python3 ~/.claude/skills/local-context-filter/filter.py --image photo.jpg --task "describe what's in this photo"
+```
+
+Extracts format, mode, dimensions, file size, and decoded EXIF/GPS tags via
+Pillow — no LLM involved, same confinement rules as `--input` elsewhere
+(`--image` itself is the confined path). Prints JSON by default; pass
+`--format md` for Markdown instead. Requires Pillow (`pip3 install Pillow`).
+
+Add `--task` to also send the image to a vision-capable model on the
+selected backend (e.g. `llava` or `qwen2.5vl` on Ollama, a VL model loaded
+in LM Studio) and fold its answer in as a `description` field/section —
+this is the only case where `--image` touches a backend, same fallback
+rules as `--task` elsewhere apply if it's unreachable. Mutually exclusive
+with `--grep`/`--diff`/`--log`/`--ls`/`--find`/`--run`/`--count`/`--semantic`.
+`--format` is only valid together with `--image`.
+
+**Auto-picking the vision model when two models are loaded:** without
+`--model`, `--image --task` restricts auto-pick to model names that look
+vision-capable (substring match on `llava`, `vision`, `vl`, `bakllava`,
+`moondream`, `minicpm-v`, `pixtral`) instead of just grabbing whatever's
+running — so with both `qwen2.5:7b` (code/text) and `llava` (vision)
+loaded in Ollama at once, plain `--task` calls keep auto-picking the text
+model and `--image --task` calls auto-pick `llava`, no `--model` needed
+on either. It's a name-based heuristic (there's no API to ask "can this
+model see images"), so an unusually-named vision model won't be found
+automatically — pass `--model` explicitly in that case. If nothing
+loaded/pulled matches, it exits with an error listing what it looked for
+instead of silently sending the image to a text-only model.
+
 ### Project-level excludes (`.claude/local-context-filter.json`)
 
 `--grep`, `--ls`, `--find`, and `--count` skip `.git`, `node_modules`, `dist`,
@@ -383,6 +419,8 @@ whether that text ever entered Claude's context. For exact-pattern search,
 | `--find` | — | glob pattern for basename search (like `find -iname`); no-LLM without `--task` |
 | `--count` | off | count lines per file under `--input` (like `wc -l`); no-LLM without `--task` |
 | `--run` | — | run an `npm`/`npx`/`pnpm`/`yarn` command; no-LLM without `--task` |
+| `--image` | — | path to an image; extracts EXIF/dimensions, no-LLM without `--task` |
+| `--format` | `json` | output format for `--image`: `json` or `md` |
 | `--semantic` | — | search by meaning (query text); needs `--embed-model`; no-LLM without `--task` |
 | `--embed-model` | none (required with `--semantic`) | embedding model tag/id, e.g. `nomic-embed-text` |
 | `--top-k` | 10 | max results for `--semantic` |

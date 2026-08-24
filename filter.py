@@ -11,6 +11,7 @@ Usage:
   python3 filter.py --find PATTERN [--input DIR] [--task "TASK"]
   python3 filter.py --run "npm install" [--input DIR] [--task "TASK"]
   python3 filter.py --count [--input FILE_OR_DIR] [--task "TASK"]
+  python3 filter.py --image PATH [--format json|md] [--task "TASK"]
   python3 filter.py --report
 
 --input may be a file or a directory (searched recursively, subdirs included).
@@ -68,6 +69,12 @@ are re-embedded), then embeds the query and returns the top --top-k (default
 No Claude tokens spent on the search itself, only local embedding calls.
 Add --task to have the local model further filter the results.
 
+--image PATH extracts metadata (format, dimensions, EXIF, GPS) from an
+image via Pillow — no LLM involved. Add --task to also send the image to
+a vision-capable model on the selected backend (e.g. ollama's llava/
+qwen2.5vl) and fold its answer in as a "description" field. --format
+picks json (default) or md for the printed output.
+
 --report prints a summary of usage.json (total runs and estimated tokens
 saved, broken down by mode) — no LLM, cannot combine with anything else.
 
@@ -88,6 +95,7 @@ eyeball how much this has saved over time; never blocks the command if the
 log can't be written.
 """
 import argparse
+import base64
 import fnmatch
 import json
 import math
@@ -159,9 +167,27 @@ def list_models(backend, host):
     return [id_ for m in data.get("data", []) if (id_ := m.get("id"))]
 
 
-def running_ollama_model(host):
-    """Return the name of the model currently loaded in Ollama's memory (via
-    /api/ps), or None if none is loaded or the check fails for any reason.
+VISION_MODEL_HINTS = ("llava", "vision", "vl", "bakllava", "moondream", "minicpm-v", "pixtral")
+
+
+def is_vision_model(name):
+    """Heuristic: does this model name look vision-capable, by substring
+    match against VISION_MODEL_HINTS (e.g. "llava", "qwen2.5vl", "llama3.2-
+    vision", "moondream")? Name-based only — there's no reliable way to ask
+    ollama/lmstudio "can this model see images" up front, so this can both
+    miss an unusually-named vision model and (rarely) false-positive on an
+    unrelated name containing "vl". Good enough to auto-route --image
+    without requiring --model every time; pass --model explicitly to
+    override when it guesses wrong.
+    """
+    lname = name.lower()
+    return any(hint in lname for hint in VISION_MODEL_HINTS)
+
+
+def running_ollama_models(host):
+    """Return the names of every model currently loaded in Ollama's memory
+    (via /api/ps), in the order the server reported them, or [] if none is
+    loaded or the check fails for any reason.
 
     Never raises — this is a best-effort convenience, not a requirement.
     """
@@ -169,47 +195,57 @@ def running_ollama_model(host):
         with urllib.request.urlopen(f"{host}/api/ps", timeout=3) as resp:
             data = json.loads(resp.read())
     except (urllib.error.URLError, ValueError):
-        return None
-    models = data.get("models", [])
-    return models[0].get("name") if models else None
+        return []
+    return [name for m in data.get("models", []) if (name := m.get("name"))]
 
 
-def running_lmstudio_model(host):
-    """Return the id of the model currently loaded in LM Studio, or None if
-    none is loaded or the check fails for any reason.
+def running_lmstudio_models(host):
+    """Return the ids of every model currently loaded in LM Studio (via its
+    own /api/v0/models, which exposes load state), or [] if none is loaded
+    or the check fails for any reason.
 
     /v1/models lists every downloaded model regardless of load state, so it
-    can't answer this — only LM Studio's own /api/v0/models exposes a
-    "state": "loaded"/"not-loaded" field per model. Never raises — this is
-    a best-effort convenience, not a requirement.
+    can't answer this. Never raises — this is a best-effort convenience,
+    not a requirement.
     """
     try:
         with urllib.request.urlopen(f"{host}/api/v0/models", timeout=3) as resp:
             data = json.loads(resp.read())
     except (urllib.error.URLError, ValueError):
-        return None
-    for m in data.get("data", []):
-        if m.get("state") == "loaded":
-            return m.get("id")
-    return None
+        return []
+    return [id_ for m in data.get("data", []) if m.get("state") == "loaded" and (id_ := m.get("id"))]
 
 
-def resolve_model(backend, host, model):
+def resolve_model(backend, host, model, require_vision=False):
     """Validate an explicit --model, or auto-pick one when none was given.
 
-    Auto-pick order for ollama: the model currently loaded in memory (via
-    /api/ps, so it matches whatever you're already running, no extra load
-    time) > the hardcoded default if pulled > alphabetically first pulled
-    model.
+    require_vision=True (used by --image --task) restricts auto-pick to
+    models whose name looks vision-capable (see is_vision_model) — this is
+    how --image finds the right model automatically when both a text model
+    (e.g. qwen2.5:7b) and a vision model (e.g. llava) are loaded/pulled at
+    once, without needing --model on every call. An explicit --model is
+    never filtered this way — it's just validated for existence, with a
+    stderr warning if its name doesn't look vision-capable, in case the
+    backend rejects the image outright.
+
+    Auto-pick order for ollama: the running vision/non-vision model (via
+    /api/ps — matches whatever's already loaded, no extra load time,
+    filtered to vision-hinted names first if require_vision) > (non-vision
+    only) the hardcoded default if pulled > alphabetically first pulled
+    model in the (possibly vision-filtered) pool.
 
     Auto-pick for lmstudio: the currently loaded model (via LM Studio's own
     /api/v0/models, which exposes load state — plain /v1/models lists every
-    downloaded model, loaded or not, so it can't tell us this) > first
-    entry in /v1/models order as a last resort.
+    downloaded model, loaded or not, so it can't tell us this), filtered to
+    vision-hinted names first if require_vision, > first entry in the pool
+    as a last resort.
 
     Auto-pick for openai (generic OpenAI-compatible servers): first entry
-    in /v1/models order — there's no standard way to ask a generic server
-    which model is "loaded".
+    in the (possibly vision-filtered) /v1/models order — there's no
+    standard way to ask a generic server which model is "loaded".
+
+    Exits with a clear error if require_vision and no vision-hinted model
+    is available at all.
     """
     names = list_models(backend, host)
     if model:
@@ -221,22 +257,42 @@ def resolve_model(backend, host, model):
             else:
                 fix = "load it on the server first"
             sys.exit(f"error: model '{model}' not available on {backend}. {fix} (available: {', '.join(sorted(names)) or 'none'}).")
+        if require_vision and not is_vision_model(model):
+            print(f"warning: '{model}' doesn't look like a vision model by name; the backend may reject the image", file=sys.stderr)
         return model
+
+    if require_vision:
+        pool = [n for n in names if is_vision_model(n)]
+        if not pool:
+            sys.exit(
+                f"error: no vision-capable model found on {backend} at {host} "
+                f"(looked for names containing: {', '.join(VISION_MODEL_HINTS)}). "
+                f"Pull/load one (e.g. `ollama pull llava` or `qwen2.5vl`) or pass --model explicitly."
+            )
+    else:
+        # Exclude vision-hinted models from plain (non-image) auto-pick too,
+        # so a vision model left loaded from a prior --image call doesn't
+        # get reused for a text/code task just because it's "running" —
+        # fall back to the unfiltered list only if every available model
+        # happens to look vision-hinted (nothing else to pick from).
+        non_vision = [n for n in names if not is_vision_model(n)]
+        pool = non_vision if non_vision else names
+
     if backend == "ollama":
-        running = running_ollama_model(host)
-        if running and running in names:
-            return running
-        if DEFAULT_MODELS["ollama"] in names:
+        running = [r for r in running_ollama_models(host) if r in pool]
+        if running:
+            return running[0]
+        if not require_vision and DEFAULT_MODELS["ollama"] in pool:
             return DEFAULT_MODELS["ollama"]
-        if names:
-            return sorted(names)[0]
+        if pool:
+            return sorted(pool)[0]
         sys.exit(f"error: no models available on {backend} at {host}.")
     if backend == "lmstudio":
-        running = running_lmstudio_model(host)
-        if running and running in names:
-            return running
-    if names:
-        return names[0]
+        running = [r for r in running_lmstudio_models(host) if r in pool]
+        if running:
+            return running[0]
+    if pool:
+        return pool[0]
     sys.exit(f"error: no models available on {backend} at {host}.")
 
 
@@ -1007,6 +1063,156 @@ def call_llm_chunked(backend, host, model, task, content, max_words):
     return "\n\n".join(results) if results else "NO_RELEVANT_CONTENT"
 
 
+IMAGE_MIME_MAP = {
+    "JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif",
+    "WEBP": "image/webp", "BMP": "image/bmp", "TIFF": "image/tiff",
+}
+
+
+def _jsonable(value):
+    """Coerce a Pillow/EXIF value into something json.dumps can handle
+    (bytes -> str, IFDRational/etc -> float/str), recursing into
+    dicts/lists/tuples. Falls back to str() for anything else exotic.
+    """
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return str(value)
+
+
+def extract_image_metadata(path):
+    """Return a dict of no-LLM image metadata: format, mode, dimensions,
+    file size, and decoded EXIF/GPS tags (if present). Exits with a clear
+    error if Pillow isn't installed or the file isn't a readable image.
+    """
+    try:
+        from PIL import Image, ExifTags
+    except ImportError:
+        sys.exit("error: Pillow not installed. Run: pip3 install Pillow")
+    try:
+        img = Image.open(path)
+        img.load()
+    except Exception as e:
+        sys.exit(f"error: '{path}' is not a readable image file ({e})")
+
+    meta = {
+        "file": os.path.basename(path),
+        "format": img.format,
+        "mode": img.mode,
+        "width": img.width,
+        "height": img.height,
+        "size_bytes": os.path.getsize(path),
+    }
+
+    exif_data = {}
+    gps_data = {}
+    try:
+        exif = img.getexif()
+    except Exception:
+        exif = None
+    if exif:
+        for tag_id, value in exif.items():
+            tag = ExifTags.TAGS.get(tag_id, tag_id)
+            if tag == "GPSInfo":
+                try:
+                    gps_ifd = exif.get_ifd(tag_id)
+                except Exception:
+                    gps_ifd = value if isinstance(value, dict) else {}
+                for gps_id, gps_value in gps_ifd.items():
+                    gps_tag = ExifTags.GPSTAGS.get(gps_id, gps_id)
+                    gps_data[str(gps_tag)] = _jsonable(gps_value)
+            else:
+                exif_data[str(tag)] = _jsonable(value)
+    if exif_data:
+        meta["exif"] = exif_data
+    if gps_data:
+        meta["gps"] = gps_data
+    return meta
+
+
+def image_to_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("ascii")
+
+
+def call_vision_llm(backend, host, model, task, image_b64, image_format, max_words):
+    """Ask a vision-capable model on backend to describe/analyze an image.
+
+    ollama: POST /api/generate with raw base64 in "images" (no data-URI
+    prefix). lmstudio/openai: OpenAI-compatible chat completions with an
+    image_url content part using a data: URI (mime picked from
+    image_format, falling back to image/jpeg for an unrecognized one).
+    """
+    prompt_text = f"{task}\n\nKeep the output under {max_words} words."
+    if backend == "ollama":
+        url = f"{host}/api/generate"
+        payload = {
+            "model": model,
+            "prompt": prompt_text,
+            "images": [image_b64],
+            "stream": False,
+            "options": {"temperature": 0.2},
+        }
+    else:
+        mime = IMAGE_MIME_MAP.get((image_format or "").upper(), "image/jpeg")
+        url = f"{host}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+                    ],
+                }
+            ],
+            "temperature": 0.2,
+            "stream": False,
+        }
+    data = _post_json(backend, url, payload, timeout=180)
+    if backend == "ollama":
+        return data.get("response", "").strip()
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError):
+        sys.exit(f"error: {backend} at {url} returned an unexpected response shape: {json.dumps(data)[:300]}")
+
+
+def format_metadata_md(meta):
+    """Render an --image metadata dict as Markdown."""
+    lines = [f"# {meta['file']}", ""]
+    lines.append(f"- Format: {meta.get('format')}")
+    lines.append(f"- Mode: {meta.get('mode')}")
+    lines.append(f"- Dimensions: {meta.get('width')}x{meta.get('height')}")
+    lines.append(f"- Size: {meta.get('size_bytes')} bytes")
+    if "description" in meta:
+        lines.append("")
+        lines.append("## Description")
+        lines.append(meta["description"])
+    if meta.get("exif"):
+        lines.append("")
+        lines.append("## EXIF")
+        for k, v in meta["exif"].items():
+            lines.append(f"- {k}: {v}")
+    if meta.get("gps"):
+        lines.append("")
+        lines.append("## GPS")
+        for k, v in meta["gps"].items():
+            lines.append(f"- {k}: {v}")
+    return "\n".join(lines)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--task", help="what the filtered content will be used for (required unless --grep is used alone)")
@@ -1020,6 +1226,8 @@ def main():
     ap.add_argument("--find", metavar="PATTERN", help="find files/dirs by basename glob (like `find -iname`) under --input, no LLM")
     ap.add_argument("--run", metavar="COMMAND", help="run an npm/npx/pnpm/yarn command (e.g. 'npm install') at --input (default: cwd) and print its output; no LLM without --task")
     ap.add_argument("--count", action="store_true", help="count lines per file under --input (default: cwd), like `wc -l`; no LLM without --task")
+    ap.add_argument("--image", metavar="PATH", help="extract image metadata (EXIF/dimensions) via Pillow, no LLM; add --task to also get a vision-model description")
+    ap.add_argument("--format", choices=["json", "md"], default="json", help="output format for --image (default: json)")
     ap.add_argument("--semantic", metavar="QUERY", help="search by meaning across the whole project (--input only scopes shown results); requires --embed-model")
     ap.add_argument("--embed-model", help="embedding model tag/id, required with --semantic (no default)")
     ap.add_argument("--top-k", type=int, default=10, metavar="N", help="max results for --semantic (default: 10)")
@@ -1033,10 +1241,10 @@ def main():
 
     other_modes = (
         args.diff or args.log or bool(args.grep) or args.ls or bool(args.find) or bool(args.run)
-        or args.count or bool(args.semantic) or bool(args.task) or bool(args.input)
+        or args.count or bool(args.semantic) or bool(args.image) or bool(args.task) or bool(args.input)
     )
     if args.report and other_modes:
-        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--semantic/--task/--input")
+        ap.error("--report cannot be combined with --diff/--log/--grep/--ls/--find/--run/--count/--semantic/--image/--task/--input")
     if args.clean and (other_modes or args.report):
         ap.error("--clean cannot be combined with anything else")
     if args.report:
@@ -1052,16 +1260,20 @@ def main():
         print("USAGE_LOG_CLEARED" if existed else "NO_USAGE_DATA")
         return
 
-    if sum([args.diff, args.log, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count, bool(args.semantic)]) > 1:
-        ap.error("--diff, --log, --grep, --ls, --find, --run, --count, and --semantic are mutually exclusive")
+    if sum([args.diff, args.log, bool(args.grep), args.ls, bool(args.find), bool(args.run), args.count, bool(args.semantic), bool(args.image)]) > 1:
+        ap.error("--diff, --log, --grep, --ls, --find, --run, --count, --semantic, and --image are mutually exclusive")
     if args.semantic and not args.embed_model:
         ap.error("--embed-model is required with --semantic")
     if args.semantic and args.top_k < 1:
         ap.error("--top-k must be a positive integer")
+    if args.format != "json" and not args.image:
+        ap.error("--format is only used with --image")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]
     set_confine_root(args.input)
+    if args.image:
+        set_confine_root(args.image)
     excluded_dirs = EXCLUDED_DIRS | load_project_excludes(CONFINE_ROOT)
 
     if args.ls:
@@ -1209,6 +1421,22 @@ def main():
         log_usage("semantic", args.backend, len(joined), len(result))
         return
 
+    if args.image:
+        image_path = confine_to_root(args.image)
+        if not os.path.isfile(image_path):
+            sys.exit(f"error: '{args.image}' does not exist or is not a file")
+        meta = extract_image_metadata(image_path)
+        if args.task:
+            model = resolve_model(args.backend, host, args.model, require_vision=True)
+            b64 = image_to_base64(image_path)
+            meta["description"] = call_vision_llm(
+                args.backend, host, model, args.task, b64, meta.get("format"), args.max_words
+            )
+        output = json.dumps(meta, indent=2, ensure_ascii=False) if args.format == "json" else format_metadata_md(meta)
+        print(output)
+        log_usage("image", args.backend if args.task else None, os.path.getsize(image_path), len(output))
+        return
+
     if args.grep:
         root = confine_to_root(args.input) if args.input else ROOT
         require_existing_input(args.input, root)
@@ -1237,7 +1465,7 @@ def main():
         return
 
     if not args.task:
-        ap.error("--task is required unless --grep/--ls/--find/--semantic is used")
+        ap.error("--task is required unless --grep/--ls/--find/--semantic/--image is used")
     model = resolve_model(args.backend, host, args.model)
     content = read_input(args.input)
     result = call_llm_chunked(args.backend, host, model, args.task, content, args.max_words)

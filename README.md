@@ -109,6 +109,31 @@ model is "loaded". Pass `--model` explicitly if you want a specific one.
 
 Only one backend needs to run at a time — pick one with `--backend`.
 
+**For `--image`:**
+
+- **Metadata/EXIF (no LLM):** requires Pillow — `pip3 install Pillow`.
+- **`--image --task` (vision-model description):** also needs a
+  vision-capable model pulled/loaded on the backend, e.g.
+  `ollama pull llava` or `ollama pull qwen2.5vl`. Auto-picked by name
+  heuristic when `--model` isn't given (see below) — no vision model
+  found on the backend is a hard error, not a silent fallback to a text
+  model.
+- **`--ocr` (classic OCR, no LLM by itself):** requires the `tesseract`
+  binary — `brew install tesseract` (macOS) or
+  `sudo apt install tesseract-ocr` (Ubuntu/Debian). Only the `eng`
+  language pack ships by default; install more for `--lang` (e.g. `spa`)
+  with `brew install tesseract-lang` (macOS, all languages) or
+  `sudo apt install tesseract-ocr-spa` (Ubuntu/Debian, one language).
+- **`--ocr --task`** reuses whatever backend/model you already have for
+  plain `--task` (a text model, not vision) — no extra install beyond
+  the two above.
+- **Recommended over `--image --task` for reading text out of an image**
+  (receipts, screenshots, scanned docs): small local vision models are
+  unreliable OCR — in testing, `llava` hallucinated a credit card number
+  that wasn't in a payment receipt image, while `--ocr` read every real
+  field correctly. Use `--image --task` (no `--ocr`) for describing a
+  photo's scene/content instead, where OCR doesn't apply.
+
 **Nothing auto-starts a service for you — not Ollama, not LM Studio.**
 Starting/stopping the backend is on you; the script only checks whether
 it's reachable and fails with a clear error (and a fix command) if it

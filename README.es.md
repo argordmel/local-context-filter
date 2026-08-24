@@ -113,6 +113,32 @@ uno específico.
 
 Solo un backend necesita correr a la vez — elige uno con `--backend`.
 
+**Para `--image`:**
+
+- **Metadata/EXIF (sin LLM):** requiere Pillow — `pip3 install Pillow`.
+- **`--image --task` (descripción vía modelo de visión):** también
+  necesita un modelo con soporte de visión pulled/cargado en el backend,
+  ej. `ollama pull llava` u `ollama pull qwen2.5vl`. Se auto-selecciona por
+  heurística de nombre cuando no pasás `--model` (ver más abajo) — si no
+  encuentra ningún modelo de visión en el backend, es error duro, no
+  fallback silencioso a un modelo de texto.
+- **`--ocr` (OCR clásico, sin LLM por sí solo):** requiere el binario
+  `tesseract` — `brew install tesseract` (macOS) o
+  `sudo apt install tesseract-ocr` (Ubuntu/Debian). Solo viene el paquete
+  de idioma `eng` por defecto; instalá más para `--lang` (ej. `spa`) con
+  `brew install tesseract-lang` (macOS, todos los idiomas) o
+  `sudo apt install tesseract-ocr-spa` (Ubuntu/Debian, un idioma).
+- **`--ocr --task`** reusa el mismo backend/modelo que ya tenés para
+  `--task` normal (modelo de texto, no de visión) — sin instalación extra
+  más allá de las dos anteriores.
+- **Recomendado sobre `--image --task` para leer texto de una imagen**
+  (recibos, capturas, documentos escaneados): los modelos de visión
+  locales chicos son poco confiables para OCR — en pruebas, `llava`
+  alucinó un número de tarjeta de crédito que no estaba en un comprobante
+  de pago real, mientras que `--ocr` leyó todos los campos correctamente.
+  Usá `--image --task` (sin `--ocr`) para describir la escena/contenido de
+  una foto, donde el OCR no aplica.
+
 **Nada arranca un servicio por ti — ni Ollama, ni LM Studio.** Prender o
 apagar el backend es tu responsabilidad; el script solo verifica si es
 alcanzable y falla con un error claro (y el comando para arreglarlo) si no

@@ -1312,6 +1312,8 @@ def main():
         ap.error("--ocr is only used with --image")
     if args.lang != "eng" and not args.ocr:
         ap.error("--lang is only used with --ocr")
+    if args.image and args.input:
+        ap.error("--input is not used with --image; pass the image path to --image directly")
     if args.backend == "openai" and not args.host:
         ap.error("--host is required for --backend openai (no conventional default port)")
     host = args.host or DEFAULT_HOSTS[args.backend]

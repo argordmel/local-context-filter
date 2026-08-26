@@ -525,10 +525,13 @@ def generate_report(log_path):
         f"Total tokens saved (est.): {total_saved:,}",
         "",
         "By mode:",
+        "",
     ]
-    for mode in sorted(by_mode, key=lambda m: -by_mode[m]["tokens_saved_est"]):
-        agg = by_mode[mode]
-        lines.append(f"  {mode:<6} {agg['runs']:>4} runs   {agg['tokens_saved_est']:>10,} tokens saved (est.)")
+    mode_rows = [
+        (mode, str(by_mode[mode]["runs"]), f"{by_mode[mode]['tokens_saved_est']:,}")
+        for mode in sorted(by_mode, key=lambda m: -by_mode[m]["tokens_saved_est"])
+    ]
+    lines.extend(render_table(["mode", "runs", "tokens saved (est.)"], mode_rows))
 
     by_day = {}
     for e in entries:
@@ -546,12 +549,39 @@ def generate_report(log_path):
     if last_7_days:
         lines.append("")
         lines.append("Last 7 days:")
+        lines.append("")
+        day_rows = []
         for day in last_7_days:
             agg = by_day[day]
-            weekday = datetime.strptime(day, "%Y-%m-%d").strftime("%A").lower()
-            lines.append(f"{weekday} | {agg['runs']} runs | {format_tokens_short(agg['tokens_saved_est'])} tokens")
+            weekday = datetime.strptime(day, "%Y-%m-%d").strftime("%A").capitalize()
+            day_rows.append((weekday, str(agg["runs"]), format_tokens_short(agg["tokens_saved_est"])))
+        lines.extend(render_table(["day", "runs", "tokens saved"], day_rows))
 
     return "\n".join(lines)
+
+
+def render_table(headers, rows):
+    """Render headers/rows as an aligned plain-text table (list of lines).
+
+    Uses simple ASCII borders (+---+, |) so the table prints as a real grid
+    in any terminal, without relying on markdown rendering by the caller.
+    """
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    def sep():
+        return "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+
+    def fmt_row(cells):
+        return "|" + "|".join(f" {c:<{w}} " for c, w in zip(cells, widths)) + "|"
+
+    lines = [sep(), fmt_row(headers), sep()]
+    for row in rows:
+        lines.append(fmt_row(row))
+    lines.append(sep())
+    return lines
 
 
 def format_tokens_short(n):

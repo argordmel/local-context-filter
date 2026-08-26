@@ -529,7 +529,38 @@ def generate_report(log_path):
     for mode in sorted(by_mode, key=lambda m: -by_mode[m]["tokens_saved_est"]):
         agg = by_mode[mode]
         lines.append(f"  {mode:<6} {agg['runs']:>4} runs   {agg['tokens_saved_est']:>10,} tokens saved (est.)")
+
+    by_day = {}
+    for e in entries:
+        ts = e.get("ts") or ""
+        try:
+            local_dt = datetime.fromisoformat(ts).astimezone()
+        except ValueError:
+            continue
+        day = local_dt.strftime("%Y-%m-%d")
+        agg = by_day.setdefault(day, {"runs": 0, "tokens_saved_est": 0})
+        agg["runs"] += 1
+        agg["tokens_saved_est"] += e.get("tokens_saved_est") or 0
+
+    last_7_days = sorted(by_day)[-7:]
+    if last_7_days:
+        lines.append("")
+        lines.append("Last 7 days:")
+        for day in last_7_days:
+            agg = by_day[day]
+            weekday = datetime.strptime(day, "%Y-%m-%d").strftime("%A").lower()
+            lines.append(f"{weekday} | {agg['runs']} runs | {format_tokens_short(agg['tokens_saved_est'])} tokens")
+
     return "\n".join(lines)
+
+
+def format_tokens_short(n):
+    """Abbreviate a token count as e.g. 100K, 1M, 950 for compact table display."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(n)
 
 
 def rotate_usage_log_if_needed(path):
